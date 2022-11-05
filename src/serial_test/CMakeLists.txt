@@ -29,7 +29,9 @@ ament_target_dependencies(
   "rclcpp"
   "fish_protocol"
 )
-
+target_link_libraries(serial_node
+  "fish_protocol"
+)
 install(TARGETS serial_node
   DESTINATION lib/${PROJECT_NAME})
 

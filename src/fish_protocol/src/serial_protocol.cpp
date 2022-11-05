@@ -7,7 +7,12 @@
  */
 #include "fish_protocol/serial_protocol.h"
 
+
 namespace fish_protocol {
+SerialProtocol::~SerialProtocol()
+{
+    
+}
 void SerialProtocol::_initSerialProtocol() {
   boost::system::error_code ec;
   std::cout << "open with" << protocol_config_.serial_address_ << std::endl;
@@ -29,9 +34,8 @@ void SerialProtocol::_initSerialProtocol() {
 void SerialProtocol::_recvDataCallback(const boost::system::error_code& error,
                                        size_t bytes_transferred) {
   if (bytes_transferred > 0) {
-    std::string data_str(recv_data_buffer_, bytes_transferred);
     // 回调数据
-    recv_data_callback_(data_str);
+    recv_uint8_callback(recv_data_buffer_, bytes_transferred);
   }
   _asyncReadSomeData();
 }
@@ -43,13 +47,14 @@ void SerialProtocol::_asyncReadSomeData() {
                   boost::placeholders::_1, boost::placeholders::_2));
 }
 
-int SerialProtocol::ProtocolSendRawData(const std::string& data) {
-  std::cout << "send" << data.size() << std::endl;
-  print_frame_to_hex("send", data.data(), data.size());
+int SerialProtocol::ProtocolSendString(const std::string& data) {
   serial_port_.write_some(boost::asio::buffer(data.data(), data.size()));
   return 0;
 }
-
+int SerialProtocol::ProtocolSenduint8_t(const std::uint8_t* data, const std::uint8_t len) {
+  serial_port_.write_some(boost::asio::buffer(data, len));
+  return 0;
+}
 int SerialProtocol::ProtocolDestory() {
   io_service_.stop();
   serial_port_.cancel();

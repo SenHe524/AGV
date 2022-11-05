@@ -12,10 +12,9 @@
 #include <cstdio>
 namespace fish_protocol {
 
-#define RX_TX_PACKET_SIZE (128)
-#define FIRST_CODE 0x5A
-#define END_CODE 0x5A
-#define TARGET_ADD 0x01
+#define FIRST_CODE 0x55
+#define END_CODE 0xBB
+
 
 /**
  * @brief 截取指定位数据并赋值
@@ -42,7 +41,7 @@ uint16_t crc16(const uint8_t* buf, int len);
  * @param len 长度
  * @return int 转义完成后新的帧的大小
  */
-int escape_frame(const uint8_t* frame, uint8_t* result, int len);
+int frame_packing(const uint8_t *buf, uint8_t *frame, uint8_t len, uint8_t func);
 
 /**
  * @brief 将数据帧进行反转义
@@ -52,7 +51,7 @@ int escape_frame(const uint8_t* frame, uint8_t* result, int len);
  * @param len 长度
  * @return int
  */
-int inverse_escape_frame(const uint8_t* frame, uint8_t* result, int len);
+int inverse_frame(const uint8_t *frame, uint8_t *result, uint8_t len, uint8_t func);
 
 /**
  * @brief 将数据帧打印成hex形式

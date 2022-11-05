@@ -40,28 +40,6 @@ target_link_libraries(${PROJECT_NAME} pthread boost_thread )
 
 
 
-
-
-#***************************************DEBUG模式配置************************************************#
-if(${CMAKE_BUILD_TYPE} MATCHES "DEBUG")
-
-# 添加测试文件
-file(GLOB_RECURSE FISH_PROTOCOL_TESTS "tests/*_test.cpp")
-
-find_package(GTest REQUIRED)
-if(NOT GTest_FOUND)
-    message("NOT found GTest")
-endif()
-# 添加测试可执行文件
-add_executable(${PROJECT_NAME}_test  
-    ${FISH_PROTOCOL_TESTS}
-    ${FISH_PROTOCOL_LIB_SRC}
-)
-target_link_libraries(${PROJECT_NAME}_test
-    ${Boost_LIBRARIES}
-    gtest
-)
-
 # 代码格式检查
 set(CPPLINT_SRC ${FISH_PROTOCOL_SRC} ${FISH_PROTOCOL_TESTS})
 list(REMOVE_DUPLICATES CPPLINT_SRC)
@@ -75,7 +53,6 @@ foreach(v ${CPPLINT_SRC})
   endif()
 endforeach(v)
 
-endif()
 #***************************************DEBUG模式配置************************************************#
 
 

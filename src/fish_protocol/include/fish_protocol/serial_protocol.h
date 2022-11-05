@@ -19,7 +19,7 @@
 
 #include "fish_protocol/fish_protocol_define.h"
 
-namespace fish_protocol {
+namespace fish_protocol{
 
 class SerialProtocol : public FishProtocol {
  private:
@@ -35,11 +35,13 @@ class SerialProtocol : public FishProtocol {
         serial_port_(io_service_) {
     _initSerialProtocol();
   }
-  int ProtocolSendRawData(const std::string& data) override;
+  ~SerialProtocol();
+  int ProtocolSendString(const std::string& data) override;
+  int ProtocolSenduint8_t(const std::uint8_t* data, const std::uint8_t len) override;
   int ProtocolDestory() override;
 
  private:
-  char recv_data_buffer_[1024]{};
+  unsigned char recv_data_buffer_[1024]{};
   boost::asio::io_service io_service_;
   boost::asio::serial_port serial_port_;
 };

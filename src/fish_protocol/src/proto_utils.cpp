@@ -49,44 +49,37 @@ uint16_t crc16(const uint8_t *buf, int len) {
   return crc;
 }
 
-int escape_frame(const uint8_t *frame, uint8_t *result, int len) {
-  uint16_t i = 0, j = 0;
-  result[j++] = FIRST_CODE;
-  for (i = 1; i < len - 1; i++) {
-    if (frame[i] == 0x5A) {
-      result[j++] = 0x50;
-      result[j++] = 0x0A;
-      continue;
+int frame_packing(const uint8_t *buf, uint8_t *frame, uint8_t len, uint8_t func) {
+    uint8_t cnt = 0;
+    uint8_t sum = 0;
+    frame[cnt++] = FIRST_CODE;
+    frame[cnt++] = func;
+    frame[cnt++] = len;
+    for (int i = 0; i < len; i++) {
+        frame[cnt++] = buf[i];
+        sum += buf[i];
     }
-    if (frame[i] == 0x50) {
-      result[j++] = 0x50;
-      result[j++] = 0x05;
-      continue;
-    }
-    result[j++] = frame[i];
-  }
-  result[j++] = END_CODE;
-  return j;
+    frame[cnt++] = sum & 0xFF;
+    frame[cnt++] = END_CODE;
+    return cnt;
 }
 
-int inverse_escape_frame(const uint8_t *frame, uint8_t *result, int len) {
-  uint16_t i = 0, j = 0;
-  result[j++] = FIRST_CODE;
-  for (i = 1; i < len - 1; i++) {
-    if (frame[i] == 0x50 && frame[i + 1] == 0x0A) {
-      result[j++] = 0x5A;
-      i++;
-      continue;
+int inverse_frame(const uint8_t *frame, uint8_t *result, uint8_t len, uint8_t func) {
+    uint8_t sum = 0;
+    if((frame[0] != FIRST_CODE) || (frame[len - 1] != END_CODE))
+    return 0;
+    for(int i = 3; i < len-2; i++)
+    {
+        sum += frame[i];
     }
-    if (frame[i] == 0x50 && frame[i + 1] == 0x05) {
-      result[j++] = 0x50;
-      i++;
-      continue;
+    if((sum & 0xFF) != frame[len - 2])
+    return 0;
+    func = frame[1];
+    for(int i = 3; i < len-2; i++)
+    {
+        result[i - 3] += frame[i];
     }
-    result[j++] = frame[i];
-  }
-  result[j++] = END_CODE;
-  return j;
+    return frame[2];
 }
 
 void print_frame_to_hex(const char *title, const char *buffer, uint16_t size) {

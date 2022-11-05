@@ -13,10 +13,10 @@ FishProtocol::FishProtocol(const ProtocolConfig& protocol_config) {
   protocol_config_ = protocol_config;
 }
 
-void FishProtocol::SetDataRecvCallback(
-    std::function<void(const std::string&)> callback) {
-  recv_data_callback_ = callback;
-}
 
+void FishProtocol::SetDataRecvCallback(
+    std::function<void(const std::uint8_t*, const std::uint8_t)> callback) {
+  recv_uint8_callback = callback;
+}
 
 }  // namespace fish_protocol
