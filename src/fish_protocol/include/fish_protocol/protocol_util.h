@@ -13,7 +13,9 @@
 namespace fish_protocol {
 
 #define FIRST_CODE 0x55
+#define FIRST_CODE_ 0x57
 #define END_CODE 0xBB
+#define END_CODE_ 0xBD
 
 
 /**
@@ -25,13 +27,22 @@ namespace fish_protocol {
 #define SET_SUB_BYTES2(target, data) target |= ((data << 8) & 0xFF00)
 
 /**
- * @brief crc16-XMODEM校验
+ * @brief 查表法crc8校验
  *
  * @param buf 输入数组
  * @param len 数组长度
- * @return uint16_t
+ * @return uint8_t
  */
-uint16_t crc16(const uint8_t* buf, int len);
+uint8_t getcrc8tab(const uint8_t *buf, int len);
+
+/**
+ * @brief 直接计算法crc8校验
+ *
+ * @param buf 输入数组
+ * @param len 数组长度
+ * @return uint8_t
+ */
+uint8_t getCrc8(const uint8_t *buf, int len);
 
 /**
  * @brief 将数据进行转义

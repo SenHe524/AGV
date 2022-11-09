@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
-project(serial_test)
+project(agv_interfaces)
 
 # Default to C99
 if(NOT CMAKE_C_STANDARD)
@@ -15,33 +15,11 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-# 添加头文件
-include_directories(
-    include
-)
-
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
-find_package(agv_interfaces REQUIRED)
-find_package(fish_protocol REQUIRED)
-
-add_executable(serial_node src/serial_node.cpp)
-target_include_directories(serial_node PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/serial_test>
-  $<INSTALL_INTERFACE:include>)
-ament_target_dependencies(
-  serial_node
-  "rclcpp"
-  "agv_interfaces"
-  "fish_protocol"
-)
-
-target_link_libraries(serial_node
-  "fish_protocol"
-)
-install(TARGETS serial_node
-  DESTINATION lib/${PROJECT_NAME})
+find_package(std_msgs REQUIRED)
+find_package(rosidl_default_generators REQUIRED)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
@@ -53,5 +31,10 @@ if(BUILD_TESTING)
   #set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
 endif()
+
+rosidl_generate_interfaces(${PROJECT_NAME}
+"msg/AgvVelo.msg"
+DEPENDENCIES std_msgs
+)
 
 ament_package()
