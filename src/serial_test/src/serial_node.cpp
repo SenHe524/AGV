@@ -88,20 +88,32 @@ private:
     }
     void timer_callback(void)
     {
-        uint8_t buf[6] = {0};
+        uint8_t buf[16] = {0};
         uint8_t cnt_ = 0;
-        std::cout << "ctrl_cmd test！" << std::endl;
-        buf[cnt_++] = 0x3F;// 读取电机是否使能
-        buf[cnt_++] = 0x2F;// 读取电机是否出错
-        if(k%2 == 0)
-        {
-            buf[cnt_++] = 0x2F;// 
-        }
-        else{
-            buf[cnt_++] = 0x1F;// 
-        }
-        k++;
-        int cnt = fish_protocol::frame_packing(buf, tx_buf, cnt_, 0x01);
+
+        // std::cout << "ctrl_cmd test！" << std::endl;
+        // buf[cnt_++] = 0x3F;// 读取电机是否使能
+        // buf[cnt_++] = 0x2F;// 读取电机是否出错
+        // if(k%2 == 0)
+        // {
+        //     buf[cnt_++] = 0x2F;// 
+        // }
+        // else{
+        //     buf[cnt_++] = 0x1F;// 
+        // }
+        // k++;
+        std::cout << "param_cmd test！" << std::endl;
+        buf[cnt_++] = 0x2F;
+        buf[cnt_++] = 0x40;
+        buf[cnt_++] = 0x60;
+        buf[cnt_++] = 0x00;
+        buf[cnt_++] = 0x00;
+        buf[cnt_++] = 0x2F;
+        buf[cnt_++] = 0x1D;
+        buf[cnt_++] = 0x20;
+        buf[cnt_++] = 0x00;
+        buf[cnt_++] = 0x00;
+        int cnt = fish_protocol::frame_packing(buf, tx_buf, cnt_, 0x03);
         this->senddata(tx_buf, cnt);
         // this->senddata("hello");
         RCLCPP_INFO(this->get_logger(),"send：%d", cnt);
