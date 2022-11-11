@@ -40,6 +40,9 @@ ament_target_dependencies(
 target_link_libraries(serial_node
   "fish_protocol"
 )
+install(DIRECTORY launch
+        DESTINATION share/${PROJECT_NAME}
+)
 install(TARGETS serial_node
   DESTINATION lib/${PROJECT_NAME})
 

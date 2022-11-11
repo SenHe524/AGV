@@ -5,7 +5,8 @@ using namespace std::chrono_literals;
 //  声明占位参数
 // using std::placeholders::_1;
 
-uint8_t buf_tx[128] = {0};
+uint8_t tx_buf[32] = {0};
+uint8_t rx_buf[32] = {0};
 uint8_t func = 0;
 class serial_node: public rclcpp::Node
 {
@@ -14,26 +15,26 @@ public:
     {
         RCLCPP_INFO(this->get_logger(), "串口节点启动中...");
         protocol_config.serial_baut_ = 115200;
-        protocol_config.serial_address_ = "/dev/ttyUSB0";
+        protocol_config.serial_address_ = "/dev/agv_serial";
         serial_pro = std::make_shared<fish_protocol::SerialProtocol>(protocol_config);
         velo_sub = this->create_subscription<agv_interfaces::msg::AgvVelo>("velo_msgs", 10, 
         std::bind(&serial_node::velo_callback, this, std::placeholders::_1));
+        timer_ = this->create_wall_timer(5000ms, std::bind(&serial_node::timer_callback, this));
         //  设置接收到数据后的回调函数
         serial_pro->SetDataRecvCallback([](const std::uint8_t* data, const std::uint8_t len) -> void
         {
-            int cnt = fish_protocol::inverse_frame(data, buf_tx, len, func);
+            int i;
+            int cnt = fish_protocol::inverse_frame(rx_buf, data, len, func);
             printf("receive：%d, %d\n", len, cnt);
             if(cnt)
             {
-                for(int i = 0; i < cnt; i++)
+                for(i = 0; i < cnt; i++)
                 {
-                    // std::cout << data[i];
-                    printf("%x ", buf_tx[i]);
+                    printf("%x ", rx_buf[i]);
                 }
                 std::cout << std::endl;
-                for(int i = 0; i < len; i++)
+                for(i = 0; i < len; i++)
                 {
-                    // std::cout << data[i];
                     printf("%x ", data[i]);
                 }
                 std::cout << std::endl;
@@ -59,33 +60,52 @@ private:
     fish_protocol::ProtocolConfig protocol_config;  //  串口配置
     std::shared_ptr<fish_protocol::SerialProtocol> serial_pro;//  串口对象
     rclcpp::Subscription<agv_interfaces::msg::AgvVelo>::SharedPtr velo_sub;
-
+    rclcpp::TimerBase::SharedPtr timer_;
+    int k = 0;
     void velo_callback(const agv_interfaces::msg::AgvVelo::SharedPtr velo_msg)
     {
         //  回调函数处理
-        printf("修改速度！\n");
         uint8_t buf[8] = {0};
-        velocity_ velo_temp;
+        union_int16 velo_temp;
         uint8_t cnt_ = 0;
-        velo_temp.velo_ = velo_msg->v1.data;
+        std::cout << "修改速度！" << std::endl;
+        velo_temp.data_int16 = velo_msg->v1.data;
         buf[cnt_++] = velo_temp.data8[0];
         buf[cnt_++] = velo_temp.data8[1];
-        velo_temp.velo_ = velo_msg->v2.data;
+        velo_temp.data_int16 = velo_msg->v2.data;
         buf[cnt_++] = velo_temp.data8[0];
         buf[cnt_++] = velo_temp.data8[1];
-        velo_temp.velo_ = velo_msg->v3.data;
+        velo_temp.data_int16 = velo_msg->v3.data;
         buf[cnt_++] = velo_temp.data8[0];
         buf[cnt_++] = velo_temp.data8[1];
-        velo_temp.velo_ = velo_msg->v4.data;
+        velo_temp.data_int16 = velo_msg->v4.data;
         buf[cnt_++] = velo_temp.data8[0];
         buf[cnt_++] = velo_temp.data8[1];
-        int cnt = fish_protocol::frame_packing(buf, buf_tx, cnt_, 0x02);
-
-        this->senddata(buf_tx, cnt);
+        int cnt = fish_protocol::frame_packing(buf, tx_buf, cnt_, 0x02);
+        this->senddata(tx_buf, cnt);
         // this->senddata("hello");
         RCLCPP_INFO(this->get_logger(),"send：%d", cnt);
     }
-
+    void timer_callback(void)
+    {
+        uint8_t buf[6] = {0};
+        uint8_t cnt_ = 0;
+        std::cout << "ctrl_cmd test！" << std::endl;
+        buf[cnt_++] = 0x3F;// 读取电机是否使能
+        buf[cnt_++] = 0x2F;// 读取电机是否出错
+        if(k%2 == 0)
+        {
+            buf[cnt_++] = 0x2F;// 
+        }
+        else{
+            buf[cnt_++] = 0x1F;// 
+        }
+        k++;
+        int cnt = fish_protocol::frame_packing(buf, tx_buf, cnt_, 0x01);
+        this->senddata(tx_buf, cnt);
+        // this->senddata("hello");
+        RCLCPP_INFO(this->get_logger(),"send：%d", cnt);
+    }
 };
 
 

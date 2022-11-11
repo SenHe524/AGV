@@ -72,15 +72,15 @@ int frame_packing(const uint8_t *buf, uint8_t *frame, uint8_t len, uint8_t func)
     return cnt;
 }
 
-int inverse_frame(const uint8_t *frame, uint8_t *result, uint8_t len, uint8_t func) {
+int inverse_frame(uint8_t *result, const uint8_t *frame, uint8_t len, uint8_t func) {
     if((frame[0] != FIRST_CODE) || (frame[len - 1] != END_CODE))//  检查帧头帧尾
-    return 0;
+        return 0;
     for(int i = 3; i < len-2; i++)
     {
         result[i - 3] = frame[i];
     }
     if(getcrc8tab(result, frame[2]) != frame[len - 2])//    检查crc8校验
-    return 0;
+        return 0;
     func = frame[1];
     return frame[2];
 }

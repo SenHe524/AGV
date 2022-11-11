@@ -15,11 +15,10 @@ SerialProtocol::~SerialProtocol()
 }
 void SerialProtocol::_initSerialProtocol() {
   boost::system::error_code ec;
-  std::cout << "open with" << protocol_config_.serial_address_ << std::endl;
   serial_port_.open(protocol_config_.serial_address_, ec);
   assert(!ec);
   if(serial_port_.is_open())
-  printf("串口已打开！");
+  std::cout << "串口已打开:" << protocol_config_.serial_address_ << std::endl;
   serial_port_.set_option(
       boost::asio::serial_port_base::baud_rate(protocol_config_.serial_baut_));
   serial_port_.set_option(boost::asio::serial_port_base::character_size(8));

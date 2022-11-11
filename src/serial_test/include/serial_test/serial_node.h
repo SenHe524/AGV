@@ -12,15 +12,11 @@
 //  导入消息类型文件
 #include "agv_interfaces/msg/agv_velo.hpp"
 
-typedef union velocity_
+typedef union 
 {
-    int16_t velo_;
+    int16_t data_int16;
     unsigned char data8[2];
-}velocity_;
+}union_int16;
 
-// std_msgs/Int16 v1
-// std_msgs/Int16 v2
-// std_msgs/Int16 v3
-// std_msgs/Int16 v4
 
 #endif

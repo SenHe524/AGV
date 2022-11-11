@@ -23,7 +23,7 @@ public:
 
         //  3.创建发布者
         velo_pub = this->create_publisher<agv_interfaces::msg::AgvVelo>("velo_msgs", 10);
-        timer_ = this->create_wall_timer(500ms, std::bind(&velo_pub_test::timer_callback, this));
+        timer_ = this->create_wall_timer(1000ms, std::bind(&velo_pub_test::timer_callback, this));
         this->v1 = 0;
         this->v2 = 0;
         this->v3 = 0;
