@@ -9,6 +9,9 @@
 #include "fish_protocol/protocol_util.h"
 
 namespace fish_protocol {
+
+uint8_t tx_buf[32] = {0};
+
 // ------------------------查表法crc8校验-------
 static const uint8_t  crc8tab[] = 
 {0x00,0x5e,0xbc,0xe2,0x61,0x3f,0xdd,0x83,0xc2,0x9c,0x7e,0x20,0xa3,0xfd,0x1f,0x41,
@@ -72,7 +75,7 @@ int frame_packing(const uint8_t *buf, uint8_t *frame, uint8_t len, uint8_t func)
     return cnt;
 }
 
-int inverse_frame(uint8_t *result, const uint8_t *frame, uint8_t len, uint8_t func) {
+int inverse_frame(uint8_t *result, const uint8_t *frame, uint8_t len, uint8_t& func) {
     if((frame[0] != FIRST_CODE) || (frame[len - 1] != END_CODE))//  检查帧头帧尾
         return 0;
     for(int i = 3; i < len-2; i++)

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
-project(serial_test)
+project(cpp_header)
 
 # Default to C99
 if(NOT CMAKE_C_STANDARD)
@@ -18,29 +18,15 @@ endif()
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
-find_package(agv_interfaces REQUIRED)
-find_package(fish_protocol REQUIRED)
+find_package(std_msgs REQUIRED)
 
-include_directories(include/serial_test)
-add_executable(serial_node src/serial_node.cpp)
-# target_include_directories(serial_node PUBLIC
-#   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/serial_test>
-#   $<INSTALL_INTERFACE:include>)
-ament_target_dependencies(
-  serial_node
-  rclcpp
-  agv_interfaces
-)
+include_directories(include)
+add_executable(talker src/minimal_publisher_node.cpp src/minimal_publisher.cpp) 
+ament_target_dependencies(talker rclcpp std_msgs)
 
-target_link_libraries(serial_node
-  fish_protocol
-)
-install(DIRECTORY launch
-        DESTINATION share/${PROJECT_NAME}
-)
-install(TARGETS 
-    serial_node
-    DESTINATION lib/${PROJECT_NAME})
+install(TARGETS
+  talker
+  DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

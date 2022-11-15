@@ -62,7 +62,7 @@ int frame_packing(const uint8_t *buf, uint8_t *frame, uint8_t len, uint8_t func)
  * @param len 长度
  * @return int
  */
-int inverse_frame(uint8_t *result, const uint8_t *frame, uint8_t len, uint8_t func);
+int inverse_frame(uint8_t *result, const uint8_t *frame, uint8_t len, uint8_t& func);
 
 /**
  * @brief 将数据帧打印成hex形式
