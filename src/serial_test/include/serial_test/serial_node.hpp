@@ -71,7 +71,7 @@ typedef struct
 }param_get32;
 param_get32 param_get32_ret;
 
-int k = 1;
+
 uint8_t tx_buf[32] = {0};
 uint8_t rx_buf[32] = {0};
 uint8_t func = 0;
@@ -201,10 +201,6 @@ private:
     void velo_callback(const agv_interfaces::msg::AgvVelo::SharedPtr velo_msg)
     {
         // //  回调函数处理
-        // uint8_t buf[8] = {0};
-        // // serial_::union_int16 velo_temp;
-        // // uint8_t cnt_ = 0;
-        // std::cout << "修改速度！" << std::endl;
         // if( (v1 != velo_msg->v1.data) || 
         //     (v2 != velo_msg->v2.data) || 
         //     (v3 != velo_msg->v3.data) || 
@@ -217,22 +213,6 @@ private:
         //     v4 = velo_msg->v4.data;
             speed_cmd(velo_msg->v1.data, velo_msg->v2.data, velo_msg->v3.data, velo_msg->v4.data);
         // }
-        // velo_temp.data_int16 = velo_msg->v1.data;
-        // buf[cnt_++] = velo_temp.data8[0];
-        // buf[cnt_++] = velo_temp.data8[1];
-        // velo_temp.data_int16 = velo_msg->v2.data;
-        // buf[cnt_++] = velo_temp.data8[0];
-        // buf[cnt_++] = velo_temp.data8[1];
-        // velo_temp.data_int16 = velo_msg->v3.data;
-        // buf[cnt_++] = velo_temp.data8[0];
-        // buf[cnt_++] = velo_temp.data8[1];
-        // velo_temp.data_int16 = velo_msg->v4.data;
-        // buf[cnt_++] = velo_temp.data8[0];
-        // buf[cnt_++] = velo_temp.data8[1];
-        // int cnt = fish_protocol::frame_packing(buf, tx_buf, cnt_, 0x08);
-        // this->senddata(tx_buf, cnt);
-        // // this->senddata("hello");
-        // RCLCPP_INFO(this->get_logger(),"send：%d", cnt);
     }
     void timer_callback(void)
     {
