@@ -157,8 +157,7 @@ uint8_t func = 0;
 								 ((REG) == ACC_TIME) || \
 								 ((REG) == DE_TIME))
 
-#define IS_CAN_GET(REG)		    (((REG) != SAVE_RW) && \
-                                 ((REG) != MOTOR_CONTROL) && \
+#define IS_CAN_GET(REG)		    (((REG) != MOTOR_CONTROL) && \
 								 ((REG) != MOTOR_MODE))
 
 
@@ -247,36 +246,39 @@ private:
         }
         else if(select == 4)
         {
-            printf("\n\n");
-            printf("%ld\n",select);
-            isfault();
-            printf("\n\n");
+            // printf("\n\n");
+            // printf("%ld\n",select);
+            // isfault();
+            // printf("\n\n");
+            setparam(SAVE_RW_S, 0, 0, 0, 0);
         }
         else if(select == 5)
         {
-            printf("\n\n");
-            printf("%ld\n",select);
-            quickstop();
-            printf("\n\n");
+            // printf("\n\n");
+            // printf("%ld\n",select);
+            // quickstop();
+            // printf("\n\n");
+            getparam(SAVE_RW_S);
         }
         else if(select == 6)
         {
-            printf("\n\n");
-            printf("%ld\n",select);
-            quickstop_toenable();
-            printf("\n\n");
+            // printf("\n\n");
+            // printf("%ld\n",select);
+            // quickstop_toenable();
+            // printf("\n\n");
+            setparam(ACC_TIME, 200, 200, 200, 200);
         }
         else if(select == 7)
         {
-            getparam(ACTUAL_COUNT);
+            getparam(ACC_TIME);
         }
         else if(select == 8)
         {
-            setparam(ACC_TIME, 200, 200, 200, 200);
+            setparam(SAVE_RW, 2, 2, 2, 2);
         }
         else if(select == 9)
         {
-            getparam(SAVE_RW_S);
+            getparam(SAVE_RW);
         }
     }
     void data_analysis(const std::uint8_t* data, const std::uint8_t len){
@@ -379,14 +381,42 @@ public:
     }
 
     //  发送数组
-    void senddata(const unsigned char* buf, uint8_t len)
+    void senddata(const unsigned char* buf, uint8_t len, bool needret)
     {
-        serial_pro->ProtocolSenduint8_t(buf, len);
+        int ret = serial_pro->ProtocolSenduint8_t(buf, len, needret);
+        if(ret > 0)
+        {
+            int cnt = fish_protocol::inverse_frame(rx_buf, fish_protocol::recv_data_buffer_, ret, func);
+            if(cnt)
+            {
+                printf("\n阻塞reveice: ");
+                for(int i = 0; i < cnt; i++)
+                {
+                    printf("%x ", rx_buf[i]);
+                }
+                std::cout << std::endl;
+                serial_node::data_analysis(rx_buf, cnt);
+            }
+        }
     }
     //  发送字符串
-    void senddata(const std::string& data)
+    void senddata(const std::string& data, bool needret)
     {
-        serial_pro->ProtocolSendString(data);
+        int ret = serial_pro->ProtocolSendString(data, needret);
+        if(ret > 0)
+        {
+            int cnt = fish_protocol::inverse_frame(rx_buf, fish_protocol::recv_data_buffer_, ret, func);
+            if(cnt)
+            {
+                printf("\n阻塞reveice: ");
+                for(int i = 0; i < cnt; i++)
+                {
+                    printf("%x ", rx_buf[i]);
+                }
+                std::cout << std::endl;
+                serial_node::data_analysis(rx_buf, cnt);
+            }
+        }
     }
 
     
@@ -395,7 +425,7 @@ public:
         uint8_t buf[4] = {0x01, 0x01, 0x01, 0x01};
         std::cout << "control_cmd test！" << std::endl;
         int cnt = fish_protocol::frame_packing(buf, tx_buf, 4, func);
-        this->senddata(tx_buf, cnt);
+        this->senddata(tx_buf, cnt, false);
         for(int i = 0; i < cnt; i++)
         {
             printf("%x ", tx_buf[i]);
@@ -419,7 +449,7 @@ public:
             buf[i*2+1] = velo_[i].data8[1];
         }
         int cnt = fish_protocol::frame_packing(buf, tx_buf, 8, 0x08);
-        this->senddata(tx_buf, cnt);
+        this->senddata(tx_buf, cnt, false);
         for(int i = 0; i < cnt; i++)
         {
             printf("%x ", tx_buf[i]);
@@ -447,7 +477,7 @@ public:
             buf[i*2+3] = data[i].data8[1];
         }
         int cnt = fish_protocol::frame_packing(buf, tx_buf, 10, 0x09);
-        this->senddata(tx_buf, cnt);
+        this->senddata(tx_buf, cnt, false);
         for(int i = 0; i < cnt; i++)
         {
             printf("%x ", tx_buf[i]);
@@ -464,7 +494,7 @@ public:
         buf[0] = reg_.data8[0];
         buf[1] = reg_.data8[1];
         int cnt = fish_protocol::frame_packing(buf, tx_buf, 2, 0x0A);
-        this->senddata(tx_buf, cnt);
+        this->senddata(tx_buf, cnt, false);
         for(int i = 0; i < cnt; i++)
         {
             printf("%x ", tx_buf[i]);

@@ -43,8 +43,8 @@ class FishProtocol {
   ~FishProtocol(){};
 
  public:
-  virtual int ProtocolSendString(const std::string& data) = 0;
-  virtual int ProtocolSenduint8_t(const std::uint8_t* data, const std::uint8_t len) = 0;
+  virtual int ProtocolSendString(const std::string& data, bool needret) = 0;
+  virtual int ProtocolSenduint8_t(const std::uint8_t* data, const std::uint8_t len, bool needret) = 0;
   virtual int ProtocolDestory() = 0;
   void SetDataRecvCallback(std::function<void(const std::uint8_t*, const std::uint8_t)> callback);
 };

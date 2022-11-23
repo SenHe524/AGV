@@ -46,15 +46,28 @@ void SerialProtocol::_asyncReadSomeData() {
       boost::asio::buffer(recv_data_buffer_, sizeof(recv_data_buffer_)),
       boost::bind(&SerialProtocol::_recvDataCallback, this,
                   boost::placeholders::_1, boost::placeholders::_2));
+
 }
 
-int SerialProtocol::ProtocolSendString(const std::string& data) {
+int SerialProtocol::ProtocolSendString(const std::string& data, bool needret) {
+  int ret = 0;
   serial_port_.write_some(boost::asio::buffer(data.data(), data.size()));
-  return 0;
+  if(needret)
+  {
+    ret = serial_port_.read_some(boost::asio::buffer(recv_data_buffer_, sizeof(recv_data_buffer_)));
+  }
+  
+  return ret;
 }
-int SerialProtocol::ProtocolSenduint8_t(const std::uint8_t* data, const std::uint8_t len) {
+int SerialProtocol::ProtocolSenduint8_t(const std::uint8_t* data, const std::uint8_t len, bool needret) {
+  int ret = 0;
   serial_port_.write_some(boost::asio::buffer(data, len));
-  return 0;
+  if(needret)
+  {
+    ret = serial_port_.read_some(boost::asio::buffer(recv_data_buffer_, sizeof(recv_data_buffer_)));
+  }
+  
+  return ret;
 }
 int SerialProtocol::ProtocolDestory() {
   io_service_.stop();
