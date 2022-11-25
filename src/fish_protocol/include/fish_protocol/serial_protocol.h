@@ -17,11 +17,29 @@
 #include <iostream>
 #include <string>
 
-#include "fish_protocol/fish_protocol_define.h"
+namespace serial_protocol{
 
-namespace fish_protocol{
-unsigned char recv_data_buffer_[1024] = {0};
-class SerialProtocol : public FishProtocol {
+class ProtocolConfig {
+ public:
+  // serial
+  int serial_baut_;
+  std::string serial_address_;
+
+  ProtocolConfig& operator=(const ProtocolConfig& config) {
+    serial_baut_ = config.serial_baut_;
+    serial_address_ = config.serial_address_;
+    return *this;
+  };
+
+ public:
+  ProtocolConfig(){};
+  ~ProtocolConfig(){};
+};
+
+class SerialProtocol{
+protected:
+    std::function<void(const std::uint8_t*, const std::uint8_t)> recv_uint8_callback;
+    ProtocolConfig protocol_config_;
 private:
     void _asyncReadSomeData();
     void _initSerialProtocol();
@@ -30,18 +48,19 @@ private:
 
 public:
     SerialProtocol(const ProtocolConfig& protocol_config)
-        : FishProtocol(protocol_config),
-        io_service_(),
+        : io_service_(),
         serial_port_(io_service_) {
+        this->protocol_config_ = protocol_config;
         _initSerialProtocol();
     }
     ~SerialProtocol();
-    int ProtocolSendString(const std::string& data, bool needret) override;
-    int ProtocolSenduint8_t(const std::uint8_t* data, const std::uint8_t len, bool needret) override;
-    int ProtocolDestory() override;
-// public:
-//     static unsigned char recv_data_buffer_[1024] = {0};
+    
+    int ProtocolSendString(const std::string& data);
+    int ProtocolSenduint8_t(const std::uint8_t* data, const std::uint8_t len);
+    int ProtocolDestory();
+    void SetDataRecvCallback(std::function<void(const std::uint8_t*, const std::uint8_t)> callback);
 private:
+    unsigned char recv_data_buffer_[1024] = {0};
     boost::asio::io_service io_service_;
     boost::asio::serial_port serial_port_;
 };

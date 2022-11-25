@@ -8,7 +8,7 @@
 #include "fish_protocol/serial_protocol.h"
 
 
-namespace fish_protocol {
+namespace serial_protocol {
 SerialProtocol::~SerialProtocol()
 {
     
@@ -49,25 +49,13 @@ void SerialProtocol::_asyncReadSomeData() {
 
 }
 
-int SerialProtocol::ProtocolSendString(const std::string& data, bool needret) {
-  int ret = 0;
+int SerialProtocol::ProtocolSendString(const std::string& data) {
   serial_port_.write_some(boost::asio::buffer(data.data(), data.size()));
-  if(needret)
-  {
-    ret = serial_port_.read_some(boost::asio::buffer(recv_data_buffer_, sizeof(recv_data_buffer_)));
-  }
-  
-  return ret;
+  return 0;
 }
-int SerialProtocol::ProtocolSenduint8_t(const std::uint8_t* data, const std::uint8_t len, bool needret) {
-  int ret = 0;
+int SerialProtocol::ProtocolSenduint8_t(const std::uint8_t* data, const std::uint8_t len) {
   serial_port_.write_some(boost::asio::buffer(data, len));
-  if(needret)
-  {
-    ret = serial_port_.read_some(boost::asio::buffer(recv_data_buffer_, sizeof(recv_data_buffer_)));
-  }
-  
-  return ret;
+  return 0;
 }
 int SerialProtocol::ProtocolDestory() {
   io_service_.stop();
@@ -75,5 +63,10 @@ int SerialProtocol::ProtocolDestory() {
   serial_port_.close();
   return 0;
 }
+void SerialProtocol::SetDataRecvCallback(
+    std::function<void(const std::uint8_t*, const std::uint8_t)> callback) {
+  recv_uint8_callback = callback;
+}
+
 
 }  // namespace fish_protocol
