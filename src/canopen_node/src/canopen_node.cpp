@@ -1,4 +1,4 @@
-#include "serial_node.hpp"
+#include "canopen_node.hpp"
 using namespace std::chrono_literals;
 
 

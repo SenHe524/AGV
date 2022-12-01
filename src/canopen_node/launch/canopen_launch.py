@@ -16,13 +16,13 @@ def generate_launch_description():
             ]
     )
 
-    serial_node = Node(
-        package = "serial_test",
-        executable = "serial_node",
+    canopen_node = Node(
+        package = "canopen_node",
+        executable = "canopen_node",
         output="screen"
         )
 
     #   launch_description
-    launch_d = LaunchDescription([velo_pub_node, serial_node])
+    launch_d = LaunchDescription([velo_pub_node, canopen_node])
 
     return launch_d;

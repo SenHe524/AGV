@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
-project(serial_test)
+project(canopen_node)
 
 # Default to C99
 if(NOT CMAKE_C_STANDARD)
@@ -20,26 +20,26 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(agv_interfaces REQUIRED)
 find_package(fish_protocol REQUIRED)
+find_package(sensor_msgs REQUIRED)
 
-include_directories(include/serial_test)
-add_executable(serial_node src/serial_node.cpp)
-# target_include_directories(serial_node PUBLIC
-#   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/serial_test>
-#   $<INSTALL_INTERFACE:include>)
+include_directories(include/canopen_node)
+add_executable(canopen_node src/canopen_node.cpp)
+
 ament_target_dependencies(
-  serial_node
+  canopen_node
   rclcpp
   agv_interfaces
+  sensor_msgs
 )
 
-target_link_libraries(serial_node
+target_link_libraries(canopen_node
   fish_protocol
 )
 install(DIRECTORY launch
         DESTINATION share/${PROJECT_NAME}
 )
 install(TARGETS 
-    serial_node
+    canopen_node
     DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)
