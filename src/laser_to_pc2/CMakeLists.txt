@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
-project(agv_interfaces)
+project(laser_to_pc2)
 
 # Default to C99
 if(NOT CMAKE_C_STANDARD)
@@ -18,9 +18,27 @@ endif()
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
-find_package(std_msgs REQUIRED)
-find_package(rosidl_default_generators REQUIRED)
+find_package(laser_geometry REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(tf2_ros REQUIRED)
 
+add_executable(laser_to_pc2_node src/laser_to_pc2_node.cpp)
+target_include_directories(laser_to_pc2_node PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+ament_target_dependencies(
+  laser_to_pc2_node
+  "rclcpp"
+  "laser_geometry"
+  "sensor_msgs"
+  "tf2_ros"
+)
+
+install(TARGETS laser_to_pc2_node
+  DESTINATION lib/${PROJECT_NAME})
+install(DIRECTORY launch
+  DESTINATION share/${PROJECT_NAME}
+)
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   # the following line skips the linter which checks for copyrights
@@ -31,11 +49,5 @@ if(BUILD_TESTING)
   #set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
 endif()
-
-rosidl_generate_interfaces(${PROJECT_NAME}
-"msg/AgvVelo.msg"
-"msg/AgvOdometry.msg"
-DEPENDENCIES std_msgs
-)
 
 ament_package()

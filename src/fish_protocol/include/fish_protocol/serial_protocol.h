@@ -36,7 +36,15 @@ class ProtocolConfig {
   ~ProtocolConfig(){};
 };
 
+enum flush_type
+{
+  flush_receive = TCIFLUSH,
+  flush_send = TCOFLUSH,
+  flush_both = TCIOFLUSH
+};
+
 class SerialProtocol{
+    using spb = boost::asio::serial_port_base;
 protected:
     std::function<void(const std::uint8_t*, const std::uint8_t)> recv_uint8_callback;
     ProtocolConfig protocol_config_;
@@ -45,7 +53,10 @@ private:
     void _initSerialProtocol();
     void _recvDataCallback(const boost::system::error_code& error,
                         size_t bytes_transferred);
-
+    void flush_serial_port(
+            boost::asio::serial_port& serial_port,
+            flush_type what,
+            boost::system::error_code& error);
 public:
     SerialProtocol(const ProtocolConfig& protocol_config)
         : io_service_(),
@@ -57,9 +68,10 @@ public:
     
     int ProtocolSendString(const std::string& data);
     int ProtocolSenduint8_t(const std::uint8_t* data, const std::uint8_t len);
-    int ProtocolDestory();
     void SetDataRecvCallback(std::function<void(const std::uint8_t*, const std::uint8_t)> callback);
+    // int ProtocolDestory(void);
 private:
+    bool isfirst = true;
     unsigned char recv_data_buffer_[1024] = {0};
     boost::asio::io_service io_service_;
     boost::asio::serial_port serial_port_;

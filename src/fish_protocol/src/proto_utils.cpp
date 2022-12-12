@@ -7,10 +7,9 @@
  */
 
 #include "fish_protocol/protocol_util.h"
-
+#include <iostream>
 namespace fish_protocol {
-
-uint8_t tx_buf[32] = {0};
+using namespace std;
 
 // ------------------------查表法crc8校验-------
 static const uint8_t  crc8tab[] = 

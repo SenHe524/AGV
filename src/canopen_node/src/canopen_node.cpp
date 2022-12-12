@@ -12,6 +12,7 @@ void serial_node::_initSerial(void)
     serial_pro = std::make_shared<serial_protocol::SerialProtocol>(protocol_config);
     velo_sub = this->create_subscription<agv_interfaces::msg::AgvVelo>("velo_msgs", 10, 
     std::bind(&serial_node::velo_callback, this, std::placeholders::_1));
+    odometry_pub = this->create_publisher<agv_interfaces::msg::AgvOdometry>("odometry_data", 10);
     timer_ = this->create_wall_timer(5000ms, std::bind(&serial_node::timer_callback, this));
     this->declare_parameter<std::int64_t>("select", select);
     //  设置接收到数据后的回调函数
@@ -20,7 +21,7 @@ void serial_node::_initSerial(void)
         int cnt = fish_protocol::inverse_frame(rx_buf, data, len, func);
         if(cnt)
         {
-            printf("\nreveice: ");
+            std::cout << "receive:" << std::endl;
             for(int i = 0; i < len; i++)
             {
                 printf("%x ", data[i]);
@@ -30,6 +31,7 @@ void serial_node::_initSerial(void)
         }
     });
 }
+
 void serial_node::velo_callback(const agv_interfaces::msg::AgvVelo::SharedPtr velo_msg)
 {
     // //  回调函数处理
@@ -44,6 +46,7 @@ void serial_node::velo_callback(const agv_interfaces::msg::AgvVelo::SharedPtr ve
         v3 = velo_msg->v3.data;
         v4 = velo_msg->v4.data;
         speed_cmd(velo_msg->v1.data, velo_msg->v2.data, velo_msg->v3.data, velo_msg->v4.data);
+        std::cout << "speed change!---------------------------------------------------------------------" << std::endl << std::endl; 
     }
 }
 void serial_node::timer_callback(void)
@@ -108,6 +111,9 @@ void serial_node::data_analysis(const std::uint8_t* data, const std::uint8_t len
         case GET_PARAM:
             param_analysis(data, len);
             break;
+        case ODOMETRY:
+            odometry_analysis(data);            
+            break;
         default:
             printf("unknown func:%x\n", serial_::func);
             break;
@@ -125,6 +131,19 @@ void serial_node::control_analysis(const std::uint8_t* control_retdata, const st
     control_ret.cmd_ret[2] = control_retdata[2];
     control_ret.cmd_ret[3] = control_retdata[3];
 }
+void serial_node::speed_analysis(const std::uint8_t* speed_retdata, const std::uint8_t len)
+{
+    printf("speed_analysis::func = %x\n", serial_::func);
+    if(len != 4)
+        return ;
+    velocity_ret.flag = 1;
+    velocity_ret.func = serial_::func;
+    velocity_ret.velo_ret[0] = speed_retdata[0];
+    velocity_ret.velo_ret[1] = speed_retdata[1];
+    velocity_ret.velo_ret[2] = speed_retdata[2];
+    velocity_ret.velo_ret[3] = speed_retdata[3];
+}
+
 void serial_node::param_analysis(const std::uint8_t* param_retdata, const std::uint8_t len)
 {
     printf("param_analysis::func = %x\n", serial_::func);
@@ -178,6 +197,32 @@ void serial_node::param_analysis(const std::uint8_t* param_retdata, const std::u
             break;
     }
 }
+void serial_node::odometry_analysis(const std::uint8_t* odometry_retdata)
+{
+    for(int i = 0; i < 4; i++)
+    {
+        odometry_data_.count_ret[i].data8[0] = odometry_retdata[i*4];
+        odometry_data_.count_ret[i].data8[1] = odometry_retdata[i*4+1];
+        odometry_data_.count_ret[i].data8[2] = odometry_retdata[i*4+2];
+        odometry_data_.count_ret[i].data8[3] = odometry_retdata[i*4+3];
+    }
+    for(int i = 0; i < 4; i++)
+    {
+        odometry_data_.velo_ret[i].data8[0] = odometry_retdata[i*2+16];
+        odometry_data_.velo_ret[i].data8[1] = odometry_retdata[i*2+17];
+    }
+    agv_interfaces::msg::AgvOdometry odo_data;
+    odo_data.countbr.data = odometry_data_.count_ret[0].data_int32;
+    odo_data.countbl.data = odometry_data_.count_ret[1].data_int32;
+    odo_data.countfr.data = odometry_data_.count_ret[2].data_int32;
+    odo_data.countfl.data = odometry_data_.count_ret[3].data_int32;
+    odo_data.vbr.data = odometry_data_.velo_ret[0].data_int16;
+    odo_data.vbl.data = odometry_data_.velo_ret[1].data_int16;
+    odo_data.vfr.data = odometry_data_.velo_ret[2].data_int16;
+    odo_data.vfl.data = odometry_data_.velo_ret[3].data_int16;
+    odometry_pub->publish(odo_data);
+}
+
 //  发送数组
 void serial_node::senddata(const unsigned char* buf, uint8_t len)
 {
@@ -196,10 +241,6 @@ void serial_node::control_cmd(uint8_t func)
     std::cout << "control_cmd test！" << std::endl;
     int cnt = fish_protocol::frame_packing(buf, tx_buf, 4, func);
     this->senddata(tx_buf, cnt);
-    // for(int i = 0; i < cnt; i++)
-    // {
-    //     printf("%x ", tx_buf[i]);
-    // }
     std::cout << std::endl;
     // RCLCPP_INFO(this->get_logger(),"send：%d", cnt);
 }
@@ -220,10 +261,6 @@ void serial_node::speed_cmd(const int16_t motor1_velo, const int16_t motor2_velo
     }
     int cnt = fish_protocol::frame_packing(buf, tx_buf, 8, 0x08);
     this->senddata(tx_buf, cnt);
-    // for(int i = 0; i < cnt; i++)
-    // {
-    //     printf("%x ", tx_buf[i]);
-    // }
     std::cout << std::endl;
 }
 void serial_node::param_set_cmd(const uint16_t reg, const uint16_t motor1_data, 
@@ -286,7 +323,7 @@ void serial_node::clearvelobuf(void)
     velocity_ret.func = 0;
     for(int i = 0; i < 4; i++)
     {
-        velocity_ret.velo_ret[i].data_int16 = 0;
+        velocity_ret.velo_ret[i] = 0;
     }
 }
 void serial_node::clearsetbuf(void)

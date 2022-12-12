@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdio>
+#include <stdlib.h>
 //  C++处理时间的库
 #include <chrono>
 #include "fish_protocol/serial_protocol.h"
@@ -7,6 +8,7 @@
 #include "rclcpp/rclcpp.hpp"
 //  导入消息类型文件
 #include "agv_interfaces/msg/agv_velo.hpp"
+#include "agv_interfaces/msg/agv_odometry.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 namespace serial_ {
 using namespace std::chrono_literals;
@@ -43,7 +45,7 @@ typedef struct
 {
     uint8_t flag;
     uint8_t func;
-    union_int16 velo_ret[4];
+    uint8_t velo_ret[4];
 }velo_;
 velo_ velocity_ret;
 
@@ -78,9 +80,17 @@ typedef struct
 }param_get32;
 param_get32 param_get32_ret;
 
+//  里程计数据
+typedef struct
+{
+    union_int32 count_ret[4];
+    union_int16 velo_ret[4];
+}odometry_;
+odometry_ odometry_data_;
 
-uint8_t tx_buf[32] = {0};
-uint8_t rx_buf[32] = {0};
+
+uint8_t tx_buf[64] = {0};
+uint8_t rx_buf[1024] = {0};
 uint8_t func = 0;
 
 
@@ -94,6 +104,7 @@ uint8_t func = 0;
 #define SPEED					0x08
 #define SET_PARAM				0x09
 #define GET_PARAM				0x0A
+#define ODOMETRY				0x0B
 
 #define SAVE_RW		            0x2009
 #define LOCK_METHOD 			0x200F
@@ -112,8 +123,8 @@ uint8_t func = 0;
 #define IS_MOTOR_MOVE 			0x2027
 #define MOTOR_HALL_STATUS		0x2028
 #define ERROR_CODE	 			0x603f
-#define MOTOR_STATUS			0x6040
-#define MOTOR_CONTROL 			0x6041
+#define MOTOR_CONTROL			0x6040
+#define MOTOR_STATUS 			0x6041
 #define MOTOR_MODE				0x6060
 #define MODE_DISPLAY 			0x6061
 #define ACTUAL_COUNT			0x6064
@@ -174,6 +185,7 @@ private:
     serial_protocol::ProtocolConfig protocol_config;  //  串口配置
     std::shared_ptr<serial_protocol::SerialProtocol> serial_pro;//  串口对象
     rclcpp::Subscription<agv_interfaces::msg::AgvVelo>::SharedPtr velo_sub;
+    rclcpp::Publisher<agv_interfaces::msg::AgvOdometry>::SharedPtr odometry_pub;
     rclcpp::TimerBase::SharedPtr timer_;
     int64_t select = 0x0A;
     int16_t v1 = 0,v2 = 0,v3 = 0,v4 = 0;
@@ -182,7 +194,9 @@ private:
     void timer_callback(void);
     void data_analysis(const std::uint8_t* data, const std::uint8_t len);
     void control_analysis(const std::uint8_t* control_retdata, const std::uint8_t len);
+    void speed_analysis(const std::uint8_t* speed_retdata, const std::uint8_t len);
     void param_analysis(const std::uint8_t* param_retdata, const std::uint8_t len);
+    void odometry_analysis(const std::uint8_t* odometry_retdata);
 
 public:
     serial_node(std::string name):Node(name){
@@ -190,7 +204,7 @@ public:
     }
     ~serial_node()
     {
-        serial_pro->ProtocolDestory();
+        // serial_pro->ProtocolDestory();
     }
 
     //  发送数组
