@@ -10,7 +10,7 @@
 #include "agv_interfaces/msg/agv_velo.hpp"
 #include "agv_interfaces/msg/agv_odometry.hpp"
 #include "nav_msgs/msg/odometry.hpp"
-namespace serial_ {
+namespace canopen_ {
 using namespace std::chrono_literals;
 
 typedef union 
@@ -88,6 +88,12 @@ typedef struct
 }odometry_;
 odometry_ odometry_data_;
 
+typedef union 
+{
+    float data_float;
+    uint8_t data8[4];
+}union_float;
+
 
 uint8_t tx_buf[64] = {0};
 uint8_t rx_buf[1024] = {0};
@@ -105,6 +111,7 @@ uint8_t func = 0;
 #define SET_PARAM				0x09
 #define GET_PARAM				0x0A
 #define ODOMETRY				0x0B
+#define IMU                     0x0C
 
 #define SAVE_RW		            0x2009
 #define LOCK_METHOD 			0x200F
@@ -179,7 +186,7 @@ uint8_t func = 0;
 								 ((REG) != MOTOR_MODE))
 
 
-class serial_node: public rclcpp::Node
+class canopen_node: public rclcpp::Node
 {
 private:
     serial_protocol::ProtocolConfig protocol_config;  //  串口配置
@@ -197,12 +204,13 @@ private:
     void speed_analysis(const std::uint8_t* speed_retdata, const std::uint8_t len);
     void param_analysis(const std::uint8_t* param_retdata, const std::uint8_t len);
     void odometry_analysis(const std::uint8_t* odometry_retdata);
+    void imu_analysis(const std::uint8_t* imu_retdata);
 
 public:
-    serial_node(std::string name):Node(name){
+    canopen_node(std::string name):Node(name){
         _initSerial();
     }
-    ~serial_node()
+    ~canopen_node()
     {
         // serial_pro->ProtocolDestory();
     }
