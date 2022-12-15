@@ -11,8 +11,8 @@
 
   <depend>rclcpp</depend>
   <depend>agv_interfaces</depend>
-  <depend>fish_protocol</depend>
   <depend>sensor_msgs</depend>
+  <depend>serial</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

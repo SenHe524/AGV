@@ -19,22 +19,21 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(agv_interfaces REQUIRED)
-find_package(fish_protocol REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(serial REQUIRED)
+
 
 include_directories(include/canopen_node)
-add_executable(canopen_node src/canopen_node.cpp)
+add_executable(canopen_node src/canopen_node.cpp src/frame_pack.cpp)
 
 ament_target_dependencies(
   canopen_node
   rclcpp
   agv_interfaces
   sensor_msgs
+  serial
 )
 
-target_link_libraries(canopen_node
-  fish_protocol
-)
 install(DIRECTORY launch
         DESTINATION share/${PROJECT_NAME}
 )

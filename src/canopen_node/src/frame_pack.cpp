@@ -1,14 +1,6 @@
-/**
- * @brief 文件描述：协议处理工具，打印、crc、转义与反转义
- * @author 小鱼 (fishros@foxmail.com)
- * @version V1.0.0
- * @date 2022-07-17
- * @copyright 版权所有：FishBot Open Source Organization
- */
-
-#include "fish_protocol/protocol_util.h"
+#include "frame_pack.h"
 #include <iostream>
-namespace fish_protocol {
+namespace frame_pack {
 using namespace std;
 
 // ------------------------查表法crc8校验-------
@@ -87,18 +79,5 @@ int inverse_frame(uint8_t *result, const uint8_t *frame, uint8_t len, uint8_t& f
     return frame[2];
 }
 
-void print_frame_to_hex(const char *title, const char *buffer, uint16_t size) {
-  int i;
-  printf("*************************start %s*******************************\n",
-         title);
-  for (i = 1; i <= size; i++) {
-    printf("0x%02X ", (uint8_t)buffer[i - 1]);
-    if (i % 16 == 0) {
-      printf("\n");
-    }
-  }
-  printf("\n*************************end %s*******************************\n",
-         title);
-}
 
 }  // namespace fish_protocol

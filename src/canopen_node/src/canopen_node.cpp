@@ -6,32 +6,150 @@ namespace canopen_{
 
 void canopen_node::_initSerial(void)
 {
-    RCLCPP_INFO(canopen_node::get_logger(), "串口节点启动中...");
-    protocol_config.serial_baut_ = 115200;
-    protocol_config.serial_address_ = "/dev/ttyUSB0";
-    serial_pro = std::make_shared<serial_protocol::SerialProtocol>(protocol_config);
+    // canopen_node::protocol_config.serial_baut_ = 460800;
+    // canopen_node::protocol_config.serial_address_ = "/dev/ttyUSB0";
+    // serial_pro = std::make_shared<serial_protocol::SerialProtocol>(canopen_node::protocol_config);
+    serial_object = std::make_shared<serial::Serial>();
     velo_sub = this->create_subscription<agv_interfaces::msg::AgvVelo>("velo_msgs", 10, 
     std::bind(&canopen_node::velo_callback, this, std::placeholders::_1));
     odometry_pub = this->create_publisher<agv_interfaces::msg::AgvOdometry>("odometry_data", 10);
     timer_ = this->create_wall_timer(5000ms, std::bind(&canopen_node::timer_callback, this));
     this->declare_parameter<std::int64_t>("select", select);
-    //  设置接收到数据后的回调函数
-    serial_pro->SetDataRecvCallback([&](const std::uint8_t* data, const std::uint8_t len) -> void
+
+    // serial库串口打开
+    try
     {
-        int cnt = fish_protocol::inverse_frame(rx_buf, data, len, func);
-        if(cnt)
-        {
-            std::cout << "receive:" << cnt << std::endl;
-            // for(int i = 0; i < len; i++)
-            // {
-            //     printf("%x ", data[i]);
-            // }
-            // std::cout << std::endl;
-            canopen_node::data_analysis(rx_buf, cnt);
-        }
-    });
+        RCLCPP_INFO(canopen_node::get_logger(), "串口节点启动中...");
+        serial_object->setPort("/dev/ttyUSB0");//选择要开启的串口号
+        serial_object->setBaudrate(115200);//设置波特率
+        serial::Timeout timeOut = serial::Timeout::simpleTimeout(serial::Timeout::max());  //超时等待
+        serial_object->setTimeout(timeOut);                                     
+        serial_object->open(); //开启串口
+    }
+    catch (serial::IOException &e)
+    {
+        RCLCPP_ERROR(this->get_logger(), "can not open serial port,Please check the serial port cable! "); //如果开启串口失败，打印错误信息
+    }
+
+    // 如果串口打开，则驱动读取数据的线程
+    if (serial_object->isOpen())
+    {
+        RCLCPP_INFO(this->get_logger(), "serial port opened"); //串口开启成功提示
+
+        // 启动一个新线程读取并处理串口数据
+        read_data_thread_ = std::shared_ptr<std::thread>(
+            new std::thread(std::bind(&canopen_node::readRawData, this)));
+    }
+    else{
+        RCLCPP_INFO(this->get_logger(), "serial port open failed"); //串口开启成功提示
+    }
+
 }
 
+void canopen_node::data_callback(const uint8_t* data, uint8_t len)
+{
+    int cnt = frame_pack::inverse_frame(frame_buf, data, len, func);
+    if(cnt)
+    {
+        // std::cout << "receive:" << cnt << std::endl;
+        // for(int i = 0; i < len; i++)
+        // {
+        //     printf("%x ", data[i]);
+        // }
+        std::cout << std::endl;
+        canopen_node::data_analysis(frame_buf, cnt);
+    }
+}
+void canopen_node::clear_usart1cmd(void)
+{
+
+	for (uint8_t i = 0; i < data_len; i++)
+		rx_buf[i] = 0;
+	data_rxflag = 0;
+	data_index = 0;
+}
+void canopen_node::data_rcv(uint8_t rxdata)
+{
+	switch (data_rxflag) {
+		case 0: // 帧头
+		{   
+			if (rxdata == FIRST_CODE) {
+				rx_buf[data_index++] = FIRST_CODE;
+				data_rxflag = 1;
+                // std::cout << "帧头:" << rxdata << std::endl;
+			} else {
+				data_rxflag = 0;
+				data_index = 0;
+				rx_buf[0] = 0x0;
+			}
+			break;
+		}
+		case 1:// 标识位
+		{
+			if ((rxdata >= 0x01) && (rxdata <= 0x0C)) {
+				rx_buf[data_index++] = rxdata;
+				data_rxflag = 2;
+                // std::cout << "标识:" << rxdata << std::endl;
+			} else {
+				data_rxflag = 0;
+				data_index = 0;
+				rx_buf[0] = 0;
+				rx_buf[1] = 0;
+			}
+			break;
+		}
+		case 2:// 数据位长度
+		{
+			// New_CMD_length为数据帧总字节数 = 帧头+标识位+长度+校验位+帧尾(5 bytes)+数据位
+			data_len = rxdata + 5;
+			if (data_len < DATA_BUF_MAX_LEN) {
+				rx_buf[data_index++] = rxdata;
+				data_rxflag = 3;
+                // std::cout << "数据长度:" << rxdata << std::endl;
+			} else {
+				data_rxflag = 0;
+				data_index = 0;
+				rx_buf[0] = 0;
+				rx_buf[1] = 0;
+				data_len = 0;
+			}
+			break;
+		}
+		case 3:// 读取完剩余的所有字段
+		{
+			rx_buf[data_index++] = rxdata;
+            // std::cout << "数据:" << rxdata << std::endl;
+			if(data_index >= data_len && rx_buf[data_len-1] == END_CODE) {
+				data_rxflag = 0;
+				data_index = 0;
+                // std::cout << "一个完整的帧!" << std::endl;
+                data_callback(rx_buf, data_len);
+                clear_usart1cmd();
+			} else if(data_index >= data_len 
+				&& rx_buf[data_len-1] != END_CODE){
+				clear_usart1cmd();
+			}
+			break;
+		}
+		default:
+			clear_usart1cmd();
+			break;
+	}
+}
+void canopen_node::readRawData(void)
+{
+    uint8_t rx_data = 0;
+    // DataFrame frame;
+
+    while (rclcpp::ok()) 
+    {
+        // 读取一个字节数据，寻找帧头
+        auto len = serial_object->read(&rx_data, 1);
+        if (len < 1)
+            continue;
+        data_rcv(rx_data);
+    }
+}
 void canopen_node::velo_callback(const agv_interfaces::msg::AgvVelo::SharedPtr velo_msg)
 {
     // //  回调函数处理
@@ -93,7 +211,7 @@ void canopen_node::timer_callback(void)
     }
 }
 void canopen_node::data_analysis(const std::uint8_t* data, const std::uint8_t len){
-    switch (canopen_::func)
+    switch (canopen_node::func)
     {
         case SET_ENABLE:
         case SET_DISENABLE:
@@ -117,17 +235,17 @@ void canopen_node::data_analysis(const std::uint8_t* data, const std::uint8_t le
             imu_analysis(data);            
             break;
         default:
-            printf("unknown func:%x\n", canopen_::func);
+            printf("unknown func:%x\n", canopen_node::func);
             break;
     }
 }
 void canopen_node::control_analysis(const std::uint8_t* control_retdata, const std::uint8_t len)
 {
-    printf("control_analysis::func = %x\n", canopen_::func);
+    printf("control_analysis::func = %x\n", canopen_node::func);
     if(len != 4)
         return ;
     control_ret.flag = 1;
-    control_ret.func = canopen_::func;
+    control_ret.func = canopen_node::func;
     control_ret.cmd_ret[0] = control_retdata[0];
     control_ret.cmd_ret[1] = control_retdata[1];
     control_ret.cmd_ret[2] = control_retdata[2];
@@ -135,11 +253,11 @@ void canopen_node::control_analysis(const std::uint8_t* control_retdata, const s
 }
 void canopen_node::speed_analysis(const std::uint8_t* speed_retdata, const std::uint8_t len)
 {
-    printf("speed_analysis::func = %x\n", canopen_::func);
+    printf("speed_analysis::func = %x\n", canopen_node::func);
     if(len != 4)
         return ;
     velocity_ret.flag = 1;
-    velocity_ret.func = canopen_::func;
+    velocity_ret.func = canopen_node::func;
     velocity_ret.velo_ret[0] = speed_retdata[0];
     velocity_ret.velo_ret[1] = speed_retdata[1];
     velocity_ret.velo_ret[2] = speed_retdata[2];
@@ -148,14 +266,14 @@ void canopen_node::speed_analysis(const std::uint8_t* speed_retdata, const std::
 
 void canopen_node::param_analysis(const std::uint8_t* param_retdata, const std::uint8_t len)
 {
-    printf("param_analysis::func = %x\n", canopen_::func);
-    switch (canopen_::func)
+    printf("param_analysis::func = %x\n", canopen_node::func);
+    switch (canopen_node::func)
     {
         case SET_PARAM:
             if(len != 6)
                 return ;
             param_set_ret.flag = 1;
-            param_set_ret.func = canopen_::func;
+            param_set_ret.func = canopen_node::func;
             param_set_ret.reg.data8[0] = param_retdata[0];
             param_set_ret.reg.data8[1] = param_retdata[1];
             param_set_ret.set_ret[0] = param_retdata[2];
@@ -169,7 +287,7 @@ void canopen_node::param_analysis(const std::uint8_t* param_retdata, const std::
                 if(len != 11)
                     return ;
                 param_get16_ret.flag = 1;
-                param_get16_ret.func = canopen_::func;
+                param_get16_ret.func = canopen_node::func;
                 param_get16_ret.reg.data8[0] = param_retdata[0];
                 param_get16_ret.reg.data8[1] = param_retdata[1];
                 for(int i = 0; i < 4; i++)
@@ -183,7 +301,7 @@ void canopen_node::param_analysis(const std::uint8_t* param_retdata, const std::
                 if(len != 18)
                     return ;
                 param_get32_ret.flag = 1;
-                param_get32_ret.func = canopen_::func;
+                param_get32_ret.func = canopen_node::func;
                 param_get32_ret.reg.data8[0] = param_retdata[0];
                 param_get32_ret.reg.data8[1] = param_retdata[1];
                 for(int i = 0; i < 4; i++)
@@ -201,7 +319,7 @@ void canopen_node::param_analysis(const std::uint8_t* param_retdata, const std::
 }
 void canopen_node::odometry_analysis(const std::uint8_t* odometry_retdata)
 {
-    printf("odometry_analysis::func = %x\n", canopen_::func);
+    printf("odometry_analysis::func = %x\n", canopen_node::func);
     for(int i = 0; i < 4; i++)
     {
         odometry_data_.count_ret[i].data8[0] = odometry_retdata[i*4];
@@ -223,22 +341,41 @@ void canopen_node::odometry_analysis(const std::uint8_t* odometry_retdata)
     odo_data.vbl.data = odometry_data_.velo_ret[1].data_int16;
     odo_data.vfr.data = odometry_data_.velo_ret[2].data_int16;
     odo_data.vfl.data = odometry_data_.velo_ret[3].data_int16;
+    
+    memcpy(&imu_info, odometry_retdata+24, 52);
+    printf("IMU数据： ");
+    // printf("%f ", imu_info.accel_x);
+    // printf("%f ", imu_info.accel_y);
+    // printf("%f ", imu_info.accel_z);
+    // printf("%f ", imu_info.angle_x);
+    // printf("%f ", imu_info.angle_y);
+    // printf("%f ", imu_info.angle_z);
+    printf("%f ", imu_info.pitch);
+    printf("%f ", imu_info.roll);
+    printf("%f ", imu_info.yaw);
+    // printf("%f ", imu_info.quaternion_data0);
+    // printf("%f ", imu_info.quaternion_data1);
+    // printf("%f ", imu_info.quaternion_data2);
+    // printf("%f \n", imu_info.quaternion_data3);
+
     odometry_pub->publish(odo_data);
 }
 
 void canopen_node::imu_analysis(const std::uint8_t* imu_retdata)
 {
-    printf("imu_analysis::func = %x\n", canopen_::func);
+    printf("imu_analysis::func = %x\n", canopen_node::func);
 }
-//  发送数组
+
+
+/*********************************serial库***************************************************/
 void canopen_node::senddata(const unsigned char* buf, uint8_t len)
 {
-    serial_pro->ProtocolSenduint8_t(buf, len);
+    serial_object->write(buf, len);
 }
 //  发送字符串
 void canopen_node::senddata(const std::string& data)
 {
-    serial_pro->ProtocolSendString(data);
+    serial_object->write(data);
 }
 
 
@@ -246,7 +383,7 @@ void canopen_node::control_cmd(uint8_t func)
 {
     uint8_t buf[4] = {0x01, 0x01, 0x01, 0x01};
     std::cout << "control_cmd test！" << std::endl;
-    int cnt = fish_protocol::frame_packing(buf, tx_buf, 4, func);
+    int cnt = frame_pack::frame_packing(buf, tx_buf, 4, func);
     this->senddata(tx_buf, cnt);
     std::cout << std::endl;
     // RCLCPP_INFO(this->get_logger(),"send：%d", cnt);
@@ -266,7 +403,7 @@ void canopen_node::speed_cmd(const int16_t motor1_velo, const int16_t motor2_vel
         buf[i*2] = velo_[i].data8[0];
         buf[i*2+1] = velo_[i].data8[1];
     }
-    int cnt = fish_protocol::frame_packing(buf, tx_buf, 8, 0x08);
+    int cnt = frame_pack::frame_packing(buf, tx_buf, 8, 0x08);
     this->senddata(tx_buf, cnt);
     std::cout << std::endl;
 }
@@ -289,7 +426,7 @@ void canopen_node::param_set_cmd(const uint16_t reg, const uint16_t motor1_data,
         buf[i*2+2] = data[i].data8[0];
         buf[i*2+3] = data[i].data8[1];
     }
-    int cnt = fish_protocol::frame_packing(buf, tx_buf, 10, 0x09);
+    int cnt = frame_pack::frame_packing(buf, tx_buf, 10, 0x09);
     this->senddata(tx_buf, cnt);
     for(int i = 0; i < cnt; i++)
     {
@@ -305,7 +442,7 @@ void canopen_node::param_get_cmd(const uint16_t reg)
     reg_.data_uint16 = reg;
     buf[0] = reg_.data8[0];
     buf[1] = reg_.data8[1];
-    int cnt = fish_protocol::frame_packing(buf, tx_buf, 2, 0x0A);
+    int cnt = frame_pack::frame_packing(buf, tx_buf, 2, 0x0A);
     this->senddata(tx_buf, cnt);
     for(int i = 0; i < cnt; i++)
     {

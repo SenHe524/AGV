@@ -3,16 +3,16 @@
 #include <stdlib.h>
 //  C++处理时间的库
 #include <chrono>
-#include "fish_protocol/serial_protocol.h"
-#include "fish_protocol/protocol_util.h"
+#include "frame_pack.h"
 #include "rclcpp/rclcpp.hpp"
+#include "serial/serial.h"
 //  导入消息类型文件
 #include "agv_interfaces/msg/agv_velo.hpp"
 #include "agv_interfaces/msg/agv_odometry.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 namespace canopen_ {
 using namespace std::chrono_literals;
-
+#define DATA_BUF_MAX_LEN 128
 typedef union 
 {
     uint16_t data_uint16;
@@ -95,9 +95,26 @@ typedef union
 }union_float;
 
 
-uint8_t tx_buf[64] = {0};
-uint8_t rx_buf[1024] = {0};
-uint8_t func = 0;
+typedef struct
+{
+	float accel_x;			/*uinit: m/s2*/
+	float accel_y;
+	float accel_z;
+
+	float angle_x;			/*uinit: ° (deg)/s*/
+	float angle_y;
+	float angle_z;
+	
+	float pitch;			/*uinit: ° (deg)*/
+	float roll;
+	float yaw;
+	
+	float quaternion_data0;
+	float quaternion_data1;	
+	float quaternion_data2;
+	float quaternion_data3;
+}imu_info_t;
+imu_info_t imu_info;
 
 
 #define SET_ENABLE				0x01
@@ -189,14 +206,30 @@ uint8_t func = 0;
 class canopen_node: public rclcpp::Node
 {
 private:
-    serial_protocol::ProtocolConfig protocol_config;  //  串口配置
-    std::shared_ptr<serial_protocol::SerialProtocol> serial_pro;//  串口对象
+    //  serial库串口对象
+    std::shared_ptr<serial::Serial> serial_object;//  串口对象
+    std::shared_ptr<std::thread> read_data_thread_;
     rclcpp::Subscription<agv_interfaces::msg::AgvVelo>::SharedPtr velo_sub;
     rclcpp::Publisher<agv_interfaces::msg::AgvOdometry>::SharedPtr odometry_pub;
     rclcpp::TimerBase::SharedPtr timer_;
+
+    uint8_t data_rxflag = 0;
+    uint8_t data_index = 0;
+    uint8_t data_len = 0;
+    uint8_t tx_buf[DATA_BUF_MAX_LEN] = {0};
+    uint8_t rx_buf[DATA_BUF_MAX_LEN] = {0};
+    uint8_t frame_buf[DATA_BUF_MAX_LEN] = {0};
+    uint8_t func = 0;
+
     int64_t select = 0x0A;
     int16_t v1 = 0,v2 = 0,v3 = 0,v4 = 0;
     void _initSerial(void);
+    //  下面四个为serial串口库对象的数据处理函数
+    void readRawData(void);
+    void data_rcv(uint8_t rxdata);
+    void clear_usart1cmd(void);
+    void data_callback(const uint8_t* data, uint8_t len);
+
     void velo_callback(const agv_interfaces::msg::AgvVelo::SharedPtr velo_msg);
     void timer_callback(void);
     void data_analysis(const std::uint8_t* data, const std::uint8_t len);
@@ -212,7 +245,7 @@ public:
     }
     ~canopen_node()
     {
-        // serial_pro->ProtocolDestory();
+        
     }
 
     //  发送数组
