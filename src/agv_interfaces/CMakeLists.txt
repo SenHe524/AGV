@@ -18,6 +18,7 @@ endif()
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
@@ -35,7 +36,12 @@ endif()
 rosidl_generate_interfaces(${PROJECT_NAME}
 "msg/AgvVelo.msg"
 "msg/AgvOdometry.msg"
-DEPENDENCIES std_msgs
+"msg/Ret.msg"
+"srv/QueryFirmwareVersion.srv"
+"srv/QueryHardwareVersion.srv"
+"srv/QuerySerial.srv"
+"srv/Servicetest.srv"
+DEPENDENCIES std_msgs sensor_msgs
 )
 
 ament_package()

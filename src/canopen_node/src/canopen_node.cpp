@@ -6,16 +6,22 @@ namespace canopen_{
 
 void canopen_node::_initSerial(void)
 {
-    // canopen_node::protocol_config.serial_baut_ = 460800;
-    // canopen_node::protocol_config.serial_address_ = "/dev/ttyUSB0";
-    // serial_pro = std::make_shared<serial_protocol::SerialProtocol>(canopen_node::protocol_config);
     serial_object = std::make_shared<serial::Serial>();
     velo_sub = this->create_subscription<agv_interfaces::msg::AgvVelo>("velo_msgs", 10, 
     std::bind(&canopen_node::velo_callback, this, std::placeholders::_1));
     odometry_pub = this->create_publisher<agv_interfaces::msg::AgvOdometry>("odometry_data", 10);
-    timer_ = this->create_wall_timer(5000ms, std::bind(&canopen_node::timer_callback, this));
+    imu_pub = this->create_publisher<sensor_msgs::msg::Imu>("imu_msg", 10);
+    ret_pub = this->create_publisher<agv_interfaces::msg::Ret>("ret_msg", 10);
+    timer_ = this->create_wall_timer(2000ms, std::bind(&canopen_node::timer_callback, this));
     this->declare_parameter<std::int64_t>("select", select);
-
+    ret_data.m1_16.data = 0;
+    ret_data.m2_16.data = 0;
+    ret_data.m3_16.data = 0;
+    ret_data.m4_16.data = 0;
+    ret_data.m1_32.data = 0;
+    ret_data.m2_32.data = 0;
+    ret_data.m3_32.data = 0;
+    ret_data.m4_32.data = 0;
     // serial库串口打开
     try
     {
@@ -41,25 +47,59 @@ void canopen_node::_initSerial(void)
             new std::thread(std::bind(&canopen_node::readRawData, this)));
     }
     else{
-        RCLCPP_INFO(this->get_logger(), "serial port open failed"); //串口开启成功提示
+        RCLCPP_INFO(this->get_logger(), "serial port open failed"); //串口开启失败提示
     }
-
 }
-
-void canopen_node::data_callback(const uint8_t* data, uint8_t len)
+void canopen_node::velo_callback(const agv_interfaces::msg::AgvVelo::SharedPtr velo_msg)
 {
-    int cnt = frame_pack::inverse_frame(frame_buf, data, len, func);
-    if(cnt)
+    // //  回调函数处理
+    if( (v1 != velo_msg->v1.data) || 
+        (v2 != velo_msg->v2.data) || 
+        (v3 != velo_msg->v3.data) || 
+        (v4 != velo_msg->v4.data)
+        )
     {
-        // std::cout << "receive:" << cnt << std::endl;
-        // for(int i = 0; i < len; i++)
-        // {
-        //     printf("%x ", data[i]);
-        // }
-        std::cout << std::endl;
-        canopen_node::data_analysis(frame_buf, cnt);
+        v1 = velo_msg->v1.data;
+        v2 = velo_msg->v2.data;
+        v3 = velo_msg->v3.data;
+        v4 = velo_msg->v4.data;
+        speed_cmd(velo_msg->v1.data, velo_msg->v2.data, velo_msg->v3.data, velo_msg->v4.data);
     }
 }
+void canopen_node::timer_callback(void)
+{
+    this->get_parameter("select", this->select);
+    if(select == 0)
+    {
+        get_Vsmooth_factor();
+    }
+    else if(select == 1)
+    {
+        get_lock();
+    }
+    else if(select == 2)
+    {
+        get_accelerate_time();
+    }
+    else if(select == 3)
+    {
+        get_motor_temp();
+    }
+    else if(select ==4)
+    {
+        setenable();
+    }
+    else if(select ==5)
+    {
+        isenable();
+    }
+    else if(select ==6)
+    {
+        isfault();
+    }
+
+}
+
 void canopen_node::clear_usart1cmd(void)
 {
 
@@ -123,7 +163,7 @@ void canopen_node::data_rcv(uint8_t rxdata)
 				data_rxflag = 0;
 				data_index = 0;
                 // std::cout << "一个完整的帧!" << std::endl;
-                data_callback(rx_buf, data_len);
+                data_analysis(rx_buf, data_len);
                 clear_usart1cmd();
 			} else if(data_index >= data_len 
 				&& rx_buf[data_len-1] != END_CODE){
@@ -150,67 +190,21 @@ void canopen_node::readRawData(void)
         data_rcv(rx_data);
     }
 }
-void canopen_node::velo_callback(const agv_interfaces::msg::AgvVelo::SharedPtr velo_msg)
-{
-    // //  回调函数处理
-    if( (v1 != velo_msg->v1.data) || 
-        (v2 != velo_msg->v2.data) || 
-        (v3 != velo_msg->v3.data) || 
-        (v4 != velo_msg->v4.data)
-        )
-    {
-        v1 = velo_msg->v1.data;
-        v2 = velo_msg->v2.data;
-        v3 = velo_msg->v3.data;
-        v4 = velo_msg->v4.data;
-        speed_cmd(velo_msg->v1.data, velo_msg->v2.data, velo_msg->v3.data, velo_msg->v4.data);
-    }
-}
-void canopen_node::timer_callback(void)
-{
-    this->get_parameter("select", this->select);
-    if(select == 0)
-    {
-
-    }
-    else if(select == 1)
-    {
-
-    }
-    else if(select == 2)
-    {
-
-    }
-    else if(select == 3)
-    {
-
-    }
-    else if(select == 4)
-    {
-
-    }
-    else if(select == 5)
-    {
-
-    }
-    else if(select == 6)
-    {
-
-    }
-    else if(select == 7)
-    {
-
-    }
-    else if(select == 8)
-    {
-
-    }
-    else if(select == 9)
-    {
-
-    }
-}
 void canopen_node::data_analysis(const std::uint8_t* data, const std::uint8_t len){
+    int cnt = frame_pack::inverse_frame(frame_buf, data, len, func);
+    if(!cnt)
+    {
+        return ;
+    }
+    if(func != 0x0B)
+    {
+        printf("receive: %d, func: %d\n", len, func);
+        for(int i = 0; i < len; i++)
+        {
+            printf("%x ", data[i]);
+        }
+        std::cout << std::endl;
+    }
     switch (canopen_node::func)
     {
         case SET_ENABLE:
@@ -220,28 +214,34 @@ void canopen_node::data_analysis(const std::uint8_t* data, const std::uint8_t le
         case IS_FAULT:
         case SET_STOP:
         case STOP_TO_ENABLE:
-            control_analysis(data, len);
+            {
+                control_analysis(frame_buf, cnt);
+            }
             break;
         case SPEED:
+            {
+                speed_analysis(frame_buf, cnt);
+            }
             break;
         case SET_PARAM:
         case GET_PARAM:
-            param_analysis(data, len);
+            {
+                param_analysis(frame_buf);
+            }
             break;
-        case ODOMETRY:
-            odometry_analysis(data);            
-            break;
-        case IMU:
-            imu_analysis(data);            
+        case ODOMETRY_IMU:
+            {
+                odometry_imu_analysis(frame_buf); 
+            }
             break;
         default:
             printf("unknown func:%x\n", canopen_node::func);
             break;
     }
+    canopen_node::func = 0x00;
 }
 void canopen_node::control_analysis(const std::uint8_t* control_retdata, const std::uint8_t len)
 {
-    printf("control_analysis::func = %x\n", canopen_node::func);
     if(len != 4)
         return ;
     control_ret.flag = 1;
@@ -253,7 +253,6 @@ void canopen_node::control_analysis(const std::uint8_t* control_retdata, const s
 }
 void canopen_node::speed_analysis(const std::uint8_t* speed_retdata, const std::uint8_t len)
 {
-    printf("speed_analysis::func = %x\n", canopen_node::func);
     if(len != 4)
         return ;
     velocity_ret.flag = 1;
@@ -263,15 +262,11 @@ void canopen_node::speed_analysis(const std::uint8_t* speed_retdata, const std::
     velocity_ret.velo_ret[2] = speed_retdata[2];
     velocity_ret.velo_ret[3] = speed_retdata[3];
 }
-
-void canopen_node::param_analysis(const std::uint8_t* param_retdata, const std::uint8_t len)
+void canopen_node::param_analysis(const std::uint8_t* param_retdata)
 {
-    printf("param_analysis::func = %x\n", canopen_node::func);
     switch (canopen_node::func)
     {
         case SET_PARAM:
-            if(len != 6)
-                return ;
             param_set_ret.flag = 1;
             param_set_ret.func = canopen_node::func;
             param_set_ret.reg.data8[0] = param_retdata[0];
@@ -284,100 +279,153 @@ void canopen_node::param_analysis(const std::uint8_t* param_retdata, const std::
         case GET_PARAM:
             if(param_retdata[2])
             {
-                if(len != 11)
-                    return ;
                 param_get16_ret.flag = 1;
                 param_get16_ret.func = canopen_node::func;
                 param_get16_ret.reg.data8[0] = param_retdata[0];
                 param_get16_ret.reg.data8[1] = param_retdata[1];
                 for(int i = 0; i < 4; i++)
                 {
-                    param_get16_ret.get_ret[i].data8[0] = param_retdata[3+i*2];
-                    param_get16_ret.get_ret[i].data8[1] = param_retdata[4+i*2];
+                    param_get16_ret.get_ret[i] = *(uint16_t*)(param_retdata+i*2+3);
                 }
+                ret_data.m1_16.data = param_get16_ret.get_ret[0];
+                ret_data.m2_16.data = param_get16_ret.get_ret[1];
+                ret_data.m3_16.data = param_get16_ret.get_ret[2];
+                ret_data.m4_16.data = param_get16_ret.get_ret[3];
+                ret_pub->publish(ret_data);
             }
             else
             {
-                if(len != 18)
-                    return ;
                 param_get32_ret.flag = 1;
                 param_get32_ret.func = canopen_node::func;
                 param_get32_ret.reg.data8[0] = param_retdata[0];
                 param_get32_ret.reg.data8[1] = param_retdata[1];
                 for(int i = 0; i < 4; i++)
                 {
-                    param_get32_ret.get_ret[i].data8[0] = param_retdata[3+i*4];
-                    param_get32_ret.get_ret[i].data8[1] = param_retdata[4+i*4];
-                    param_get32_ret.get_ret[i].data8[2] = param_retdata[5+i*4];
-                    param_get32_ret.get_ret[i].data8[3] = param_retdata[6+i*4];
+                    param_get32_ret.get_ret[i] = *(uint32_t*)(param_retdata+i*4+3);
                 }
+                ret_data.m1_32.data = param_get32_ret.get_ret[0];
+                ret_data.m2_32.data = param_get32_ret.get_ret[1];
+                ret_data.m3_32.data = param_get32_ret.get_ret[2];
+                ret_data.m4_32.data = param_get32_ret.get_ret[3];
+                ret_pub->publish(ret_data);
             }
             break;
         default:
             break;
     }
 }
-void canopen_node::odometry_analysis(const std::uint8_t* odometry_retdata)
+void canopen_node::odometry_imu_analysis(const std::uint8_t* odometry_imu_retdata)
 {
-    printf("odometry_analysis::func = %x\n", canopen_node::func);
     for(int i = 0; i < 4; i++)
     {
-        odometry_data_.count_ret[i].data8[0] = odometry_retdata[i*4];
-        odometry_data_.count_ret[i].data8[1] = odometry_retdata[i*4+1];
-        odometry_data_.count_ret[i].data8[2] = odometry_retdata[i*4+2];
-        odometry_data_.count_ret[i].data8[3] = odometry_retdata[i*4+3];
+        odometry_data_.count_ret[i] = *(int32_t*)(odometry_imu_retdata+i*4);
     }
     for(int i = 0; i < 4; i++)
     {
-        odometry_data_.velo_ret[i].data8[0] = odometry_retdata[i*2+16];
-        odometry_data_.velo_ret[i].data8[1] = odometry_retdata[i*2+17];
+        odometry_data_.velo_ret[i] = *(int16_t*)(odometry_imu_retdata+i*2+16);
     }
+    memcpy(&imu_info, odometry_imu_retdata+24, 52);
     agv_interfaces::msg::AgvOdometry odo_data;
-    odo_data.countbr.data = odometry_data_.count_ret[0].data_int32;
-    odo_data.countbl.data = odometry_data_.count_ret[1].data_int32;
-    odo_data.countfr.data = odometry_data_.count_ret[2].data_int32;
-    odo_data.countfl.data = odometry_data_.count_ret[3].data_int32;
-    odo_data.vbr.data = odometry_data_.velo_ret[0].data_int16;
-    odo_data.vbl.data = odometry_data_.velo_ret[1].data_int16;
-    odo_data.vfr.data = odometry_data_.velo_ret[2].data_int16;
-    odo_data.vfl.data = odometry_data_.velo_ret[3].data_int16;
+    sensor_msgs::msg::Imu imu_msg;
+
+    odo_data.countbr.data = odometry_data_.count_ret[0];
+    odo_data.countbl.data = odometry_data_.count_ret[1];
+    odo_data.countfr.data = odometry_data_.count_ret[2];
+    odo_data.countfl.data = odometry_data_.count_ret[3];
+    odo_data.vbr.data = odometry_data_.velo_ret[0];
+    odo_data.vbl.data = odometry_data_.velo_ret[1];
+    odo_data.vfr.data = odometry_data_.velo_ret[2];
+    odo_data.vfl.data = odometry_data_.velo_ret[3];
+
+    //std_msgs/Header header
+    imu_msg.header.frame_id = "imu_link";
+    imu_msg.header.stamp = this->get_clock()->now();
+    // geometry_msgs/Vector3 linear_acceleration
+    imu_msg.linear_acceleration.x = imu_info.accel_x;
+    imu_msg.linear_acceleration.y = imu_info.accel_y;
+    imu_msg.linear_acceleration.z = imu_info.accel_z;
+    // geometry_msgs/Vector3 angular_velocity
+    imu_info.angle_x *= M_PI / 180.0f;
+    imu_info.angle_y *= M_PI / 180.0f;
+    imu_info.angle_z *= M_PI / 180.0f;
+    imu_msg.angular_velocity.x = imu_info.angle_x;// * M_PI / 180.0f
+    imu_msg.angular_velocity.y = imu_info.angle_y;
+    imu_msg.angular_velocity.z = imu_info.angle_z;
     
-    memcpy(&imu_info, odometry_retdata+24, 52);
-    printf("IMU数据： ");
+    
+    // geometry_msgs/Quaternion orientation
+    // tf2::Quaternion q;
+    // q.setRPY(imu_info.roll, imu_info.pitch, imu_info.yaw);
+    // imu_msg.orientation.x = q[0];
+    // imu_msg.orientation.y = q[1];
+    // imu_msg.orientation.z = q[2];
+    // imu_msg.orientation.w = q[3];
+    imu_msg.orientation.x = imu_info.quaternion_data0;
+    imu_msg.orientation.y = imu_info.quaternion_data1;
+    imu_msg.orientation.z = imu_info.quaternion_data2;
+    imu_msg.orientation.w = imu_info.quaternion_data3;
+
+    // float64[9] linear_acceleration_covariance # Row major x, y z
+    imu_msg.linear_acceleration_covariance = {  0.04, 0.00, 0.00,
+                                                0.00, 0.04, 0.00,
+                                                0.00, 0.00, 0.04};
+    // float64[9] angular_velocity_covariance # Row major about x, y, z axes
+    imu_msg.angular_velocity_covariance = { 0.02, 0.00, 0.00,
+                                            0.00, 0.02, 0.00,
+                                            0.00, 0.00, 0.02};
+    // float64[9] orientation_covariance # Row major about x, y, z axes
+    imu_msg.orientation_covariance = {  0.0025, 0.0000, 0.0000,
+                                        0.0000, 0.0025, 0.0000,
+                                        0.0000, 0.0000, 0.0025};
+
+    // printf("IMU数据： ");
     // printf("%f ", imu_info.accel_x);
     // printf("%f ", imu_info.accel_y);
     // printf("%f ", imu_info.accel_z);
     // printf("%f ", imu_info.angle_x);
     // printf("%f ", imu_info.angle_y);
     // printf("%f ", imu_info.angle_z);
-    printf("%f ", imu_info.pitch);
-    printf("%f ", imu_info.roll);
-    printf("%f ", imu_info.yaw);
+    // printf("%f ", imu_info.pitch);
+    // printf("%f ", imu_info.roll);
+    // printf("%f ", imu_info.yaw);
     // printf("%f ", imu_info.quaternion_data0);
     // printf("%f ", imu_info.quaternion_data1);
     // printf("%f ", imu_info.quaternion_data2);
     // printf("%f \n", imu_info.quaternion_data3);
 
     odometry_pub->publish(odo_data);
-}
-
-void canopen_node::imu_analysis(const std::uint8_t* imu_retdata)
-{
-    printf("imu_analysis::func = %x\n", canopen_node::func);
+    imu_pub->publish(imu_msg);
 }
 
 
-/*********************************serial库***************************************************/
+/*********************************包装serial库发送函数***************************************************/
 void canopen_node::senddata(const unsigned char* buf, uint8_t len)
 {
-    serial_object->write(buf, len);
+    try
+    {
+        serial_object->write(buf, len);
+    }
+    catch(const std::exception& e)
+    {
+        std::cerr << e.what() << '\n';
+    }
+    
+    
 }
 //  发送字符串
 void canopen_node::senddata(const std::string& data)
 {
-    serial_object->write(data);
+    
+    try
+    {
+        serial_object->write(data);
+    }
+    catch(const std::exception& e)
+    {
+        std::cerr << e.what() << '\n';
+    }
 }
-
+/*********************************包装serial库发送函数***************************************************/
 
 void canopen_node::control_cmd(uint8_t func)
 {
@@ -490,8 +538,8 @@ void canopen_node::cleargetbuf(void)
     param_get32_ret.reg.data_uint16 = 0;
     for(int i = 0; i < 4; i++)
     {
-        param_get16_ret.get_ret[i].data_uint16 = 0;
-        param_get32_ret.get_ret[i].data_int32 = 0;
+        param_get16_ret.get_ret[i] = 0;
+        param_get32_ret.get_ret[i] = 0;
     }
 }
 
@@ -505,17 +553,15 @@ int8_t canopen_node::setenable(void)
     {
         i++;
         rate.sleep();
-        // printf("I = %d\n", i);
         if(i == 0xFFFF)
             return -1;
     }
-    printf("setenable: %d\n", i);
     for(i = 0; i < 4; i++)
     {
         if(control_ret.cmd_ret[i] != 1)
             return 0;
     }
-    printf("\n");
+
     return 1;
 }
 int8_t canopen_node::setdisable(void)
@@ -531,13 +577,12 @@ int8_t canopen_node::setdisable(void)
         if(i == 0xFFFF)
             return -1;
     }
-    printf("setdisable: %d\n", i);
     for(i = 0; i < 4; i++)
     {
         if(control_ret.cmd_ret[i] != 1)
             return 0;
     }
-    printf("\n");
+
     return 1;
 }
 int8_t canopen_node::isenable(void)
@@ -553,14 +598,12 @@ int8_t canopen_node::isenable(void)
         if(i == 0xFFFF)
             return -1;
     }
-    printf("isenable: %d\n", i);
     for(i = 0; i < 4; i++)
     {
         if(control_ret.cmd_ret[i] != 1)
             return 0;
-        printf("0x%x ", control_ret.cmd_ret[i]);
     }
-    printf("\n");
+
     return 1;
 }
 int8_t canopen_node::clearfault(void)
@@ -576,14 +619,12 @@ int8_t canopen_node::clearfault(void)
         if(i == 0xFFFF)
             return -1;
     }
-    printf("clearfault: %d\n", i);
     for(i = 0; i < 4; i++)
     {
         if(control_ret.cmd_ret[i] != 1)
             return 0;
-        printf("0x%x ", control_ret.cmd_ret[i]);
     }
-    printf("\n");
+
     return 1;
 }
 int8_t canopen_node::isfault(void)
@@ -599,13 +640,12 @@ int8_t canopen_node::isfault(void)
         if(i == 0xFFFF)
             return -1;
     }
-    printf("isfault: %d\n", i);
     for(i = 0; i < 4; i++)
     {
         if(control_ret.cmd_ret[i] == 1)
             return 1;
     }
-    printf("\n");
+
     return 0;
 }
 int8_t canopen_node::quickstop(void)
@@ -621,13 +661,12 @@ int8_t canopen_node::quickstop(void)
         if(i == 0xFFFF)
             return -1;
     }
-    printf("quickstop: %d\n", i);
     for(i = 0; i < 4; i++)
     {
         if(control_ret.cmd_ret[i]!=1)
             return 0;
     }
-    printf("\n");
+
     return 1;
 }
 int8_t canopen_node::quickstop_toenable(void)
@@ -643,13 +682,12 @@ int8_t canopen_node::quickstop_toenable(void)
         if(i == 0xFFFF)
             return -1;
     }
-    printf("quickstop_toenable: %d\n", i);
     for(i = 0; i < 4; i++)
     {
         if(control_ret.cmd_ret[i] != 1)
             return 0;
     }
-    printf("\n");
+
     return 1;
 }
 int8_t canopen_node::setspeed(const int16_t motor1_velo, const int16_t motor2_velo, 
@@ -683,13 +721,12 @@ int8_t canopen_node::set_issave_rw(uint16_t issave)
         if(i == 0xFFFF)
             return -1;
     }
-    printf("set_issave_rw: %d\n", i);
     for(i = 0; i < 4; i++)
     {
         if(param_set_ret.set_ret[i] != 1)
             return 0;
     }
-    printf("\n");
+
     return 1;
 }
 
@@ -707,13 +744,12 @@ int8_t canopen_node::set_lock(uint16_t lock)
         if(i == 0xFFFF)
             return -1;
     }
-    printf("set_lock: %d\n", i);
     for(i = 0; i < 4; i++)
     {
         if(param_set_ret.set_ret[i] != 1)
             return 0;
     }
-    printf("\n");
+
     return 1;
 }
 
@@ -731,13 +767,12 @@ int8_t canopen_node::set_issave_rws(uint16_t issave)
         if(i == 0xFFFF)
             return -1;
     }
-    printf("set_issave_rws: %d\n", i);
     for(i = 0; i < 4; i++)
     {
         if(param_set_ret.set_ret[i] != 1)
             return 0;
     }
-    printf("\n");
+
     return 1;
 }
 
@@ -755,13 +790,12 @@ int8_t canopen_node::set_Vsmooth_factor(uint16_t factor1, uint16_t factor2, uint
         if(i == 0xFFFF)
             return -1;
     }
-    printf("set_Vsmooth_factor: %d\n", i);
     for(i = 0; i < 4; i++)
     {
         if(param_set_ret.set_ret[i] != 1)
             return 0;
     }
-    printf("\n");
+
     return 1;
 }
 
@@ -780,13 +814,12 @@ int8_t canopen_node::set_Eratio_gain(uint16_t factor1, uint16_t factor2, uint16_
         if(i == 0xFFFF)
             return -1;
     }
-    printf("set_Eratio_gain: %d\n", i);
     for(i = 0; i < 4; i++)
     {
         if(param_set_ret.set_ret[i] != 1)
             return 0;
     }
-    printf("\n");
+
     return 1;
 }
 
@@ -804,13 +837,12 @@ int8_t canopen_node::set_Eintegral_gain(uint16_t factor1, uint16_t factor2, uint
         if(i == 0xFFFF)
             return -1;
     }
-    printf("set_Eratio_gain: %d\n", i);
     for(i = 0; i < 4; i++)
     {
         if(param_set_ret.set_ret[i] != 1)
             return 0;
     }
-    printf("\n");
+
     return 1;
 }
 
@@ -828,13 +860,12 @@ int8_t canopen_node::set_feedforward_ratio(uint16_t factor1, uint16_t factor2, u
         if(i == 0xFFFF)
             return -1;
     }
-    printf("set_Eratio_gain: %d\n", i);
     for(i = 0; i < 4; i++)
     {
         if(param_set_ret.set_ret[i] != 1)
             return 0;
     }
-    printf("\n");
+
     return 1;
 }
 
@@ -852,13 +883,13 @@ int8_t canopen_node::set_torque_ratio(uint16_t factor1, uint16_t factor2, uint16
         if(i == 0xFFFF)
             return -1;
     }
-    printf("set_Eratio_gain: %d\n", i);
+    
     for(i = 0; i < 4; i++)
     {
         if(param_set_ret.set_ret[i] != 1)
             return 0;
     }
-    printf("\n");
+
     return 1;
 }
 
@@ -876,13 +907,13 @@ int8_t canopen_node::set_VKp(uint16_t factor1, uint16_t factor2, uint16_t factor
         if(i == 0xFFFF)
             return -1;
     }
-    printf("set_Eratio_gain: %d\n", i);
+    
     for(i = 0; i < 4; i++)
     {
         if(param_set_ret.set_ret[i] != 1)
             return 0;
     }
-    printf("\n");
+
     return 1;
 }
 
@@ -900,13 +931,13 @@ int8_t canopen_node::set_VKi(uint16_t factor1, uint16_t factor2, uint16_t factor
         if(i == 0xFFFF)
             return -1;
     }
-    printf("set_Eratio_gain: %d\n", i);
+    
     for(i = 0; i < 4; i++)
     {
         if(param_set_ret.set_ret[i] != 1)
             return 0;
     }
-    printf("\n");
+
     return 1;
 }
 
@@ -924,13 +955,13 @@ int8_t canopen_node::set_Vfeedforward_Kf(uint16_t factor1, uint16_t factor2, uin
         if(i == 0xFFFF)
             return -1;
     }
-    printf("set_Eratio_gain: %d\n", i);
+    
     for(i = 0; i < 4; i++)
     {
         if(param_set_ret.set_ret[i] != 1)
             return 0;
     }
-    printf("\n");
+
     return 1;
 }
 
@@ -948,13 +979,13 @@ int8_t canopen_node::set_PKp(uint16_t factor1, uint16_t factor2, uint16_t factor
         if(i == 0xFFFF)
             return -1;
     }
-    printf("set_Eratio_gain: %d\n", i);
+    
     for(i = 0; i < 4; i++)
     {
         if(param_set_ret.set_ret[i] != 1)
             return 0;
     }
-    printf("\n");
+
     return 1;
 }
 
@@ -972,13 +1003,13 @@ int8_t canopen_node::set_Pfeedforward_Kf(uint16_t factor1, uint16_t factor2, uin
         if(i == 0xFFFF)
             return -1;
     }
-    printf("set_Eratio_gain: %d\n", i);
+    
     for(i = 0; i < 4; i++)
     {
         if(param_set_ret.set_ret[i] != 1)
             return 0;
     }
-    printf("\n");
+
     return 1;
 }
 
@@ -996,13 +1027,12 @@ int8_t canopen_node::set_accelerate_time(uint32_t time1, uint32_t time2, uint32_
         if(i == 0xFFFF)
             return -1;
     }
-    printf("set_accelerate_time: %d\n", i);
     for(i = 0; i < 4; i++)
     {
         if(param_set_ret.set_ret[i] != 1)
             return 0;
     }
-    printf("\n");
+
     return 1;
 }
 
@@ -1020,13 +1050,12 @@ int8_t canopen_node::set_decelerate_time(uint32_t time1, uint32_t time2, uint32_
         if(i == 0xFFFF)
             return -1;
     }
-    printf("set_decelerate_time: %d\n", i);
     for(i = 0; i < 4; i++)
     {
         if(param_set_ret.set_ret[i] != 1)
             return 0;
     }
-    printf("\n");
+
     return 1;
 }
 
@@ -1044,7 +1073,7 @@ int8_t canopen_node::get_count(void)
         if(i == 0xFFFF)
             return 0;
     }
-    printf("\n");
+
     return 1;
 }
 
@@ -1061,7 +1090,7 @@ int8_t canopen_node::get_motor_temp(void)
         if(i == 0xFFFF)
             return 0;
     }
-    printf("\n");
+
     return 1;
 }
 
@@ -1078,7 +1107,7 @@ int8_t canopen_node::get_motor_status(void)
         if(i == 0xFFFF)
             return 0;
     }
-    printf("\n");
+
     return 1;
 }
 
@@ -1095,7 +1124,7 @@ int8_t canopen_node::get_hall_status(void)
         if(i == 0xFFFF)
             return 0;
     }
-    printf("\n");
+
     return 1;
 }
 
@@ -1112,7 +1141,7 @@ int8_t canopen_node::get_errorcode(void)
         if(i == 0xFFFF)
             return 0;
     }
-    printf("\n");
+
     return 1;
 }
 
@@ -1129,7 +1158,7 @@ int8_t canopen_node::get_actual_velocity(void)
         if(i == 0xFFFF)
             return 0;
     }
-    printf("\n");
+
     return 1;
 }
 
@@ -1146,7 +1175,7 @@ int8_t canopen_node::get_lock(void)
         if(i == 0xFFFF)
             return 0;
     }
-    printf("\n");
+
     return 1;
 }
 
@@ -1163,7 +1192,7 @@ int8_t canopen_node::get_issave_rws(void)
         if(i == 0xFFFF)
             return 0;
     }
-    printf("\n");
+
     return 1;
 }
 
@@ -1180,7 +1209,7 @@ int8_t canopen_node::get_Vsmooth_factor(void)
         if(i == 0xFFFF)
             return 0;
     }
-    printf("\n");
+
     return 1;
 }
 
@@ -1197,7 +1226,7 @@ int8_t canopen_node::get_Eratio_gain(void)
         if(i == 0xFFFF)
             return 0;
     }
-    printf("\n");
+
     return 1;
 }
 
@@ -1214,7 +1243,7 @@ int8_t canopen_node::get_Eintegral_gain(void)
         if(i == 0xFFFF)
             return 0;
     }
-    printf("\n");
+
     return 1;
 }
 
@@ -1231,7 +1260,7 @@ int8_t canopen_node::get_feedforward_ratio(void)
         if(i == 0xFFFF)
             return 0;
     }
-    printf("\n");
+
     return 1;
 }
 
@@ -1248,7 +1277,7 @@ int8_t canopen_node::get_torque_ratio(void)
         if(i == 0xFFFF)
             return 0;
     }
-    printf("\n");
+
     return 1;
 }
 
@@ -1265,7 +1294,7 @@ int8_t canopen_node::get_VKp(void)
         if(i == 0xFFFF)
             return 0;
     }
-    printf("\n");
+
     return 1;
 }
 
@@ -1282,7 +1311,7 @@ int8_t canopen_node::get_VKi(void)
         if(i == 0xFFFF)
             return 0;
     }
-    printf("\n");
+
     return 1;
 }
 
@@ -1299,7 +1328,7 @@ int8_t canopen_node::get_Vfeedforward_Kf(void)
         if(i == 0xFFFF)
             return 0;
     }
-    printf("\n");
+
     return 1;
 }
 
@@ -1316,7 +1345,7 @@ int8_t canopen_node::get_PKp(void)
         if(i == 0xFFFF)
             return 0;
     }
-    printf("\n");
+
     return 1;
 }
 
@@ -1333,7 +1362,7 @@ int8_t canopen_node::get_Pfeedforward_Kf(void)
         if(i == 0xFFFF)
             return 0;
     }
-    printf("\n");
+
     return 1;
 }
 
@@ -1350,7 +1379,7 @@ int8_t canopen_node::get_accelerate_time(void)
         if(i == 0xFFFF)
             return 0;
     }
-    printf("\n");
+
     return 1;
 }
 
@@ -1367,7 +1396,6 @@ int8_t canopen_node::get_decelerate_time(void)
         if(i == 0xFFFF)
             return 0;
     }
-    printf("\n");
     return 1;
 }
 
@@ -1379,7 +1407,7 @@ int main(int argc, char** argv) {
   /* 初始化rclcpp  */
   rclcpp::init(argc, argv);
   /*产生一个node_01的节点*/
-  auto node = std::make_shared<canopen_::canopen_node>("serial_test");
+  auto node = std::make_shared<canopen_::canopen_node>("canopen_node");
   /* 运行节点，并检测退出信号 Ctrl+C*/
   rclcpp::spin(node);
   /* 停止运行 */

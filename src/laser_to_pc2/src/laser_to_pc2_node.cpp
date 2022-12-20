@@ -132,9 +132,11 @@ public:
             this->declare_parameter("pub_name");
             this->declare_parameter("sub_name");
             this->declare_parameter("frame_id");
+            // this->declare_parameter("tf_frame_id");
             this->get_parameter_or("pub_name", pub_name, PUB_NAME);
             this->get_parameter_or("sub_name", sub_name, SUB_NAME);
             this->get_parameter_or("frame_id", frame_id, FRAME_ID);
+            // this->get_parameter_or("tf_frame_id", tf_frame_id, TF_FRAME_ID);
         // Publisher for pointcloud messages
         pointcloud_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(pub_name, 10);
         // TF2 message buffer
@@ -155,10 +157,12 @@ public:
     const std::string PUB_NAME = "pointcloud2_pub";
     const std::string SUB_NAME = "scan";
     const std::string FRAME_ID = "laser_frame";
-  private:
+    // const std::string TF_FRAME_ID = "laser_frame";
+    private:
     std::string pub_name;
     std::string sub_name;
     std::string frame_id;
+    // std::string tf_frame_id;
     std::shared_ptr<tf2_ros::TransformListener> transform_listener_{nullptr};
     std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pointcloud_publisher_{nullptr};
@@ -179,8 +183,8 @@ public:
 
 int main(int argc, char * argv[])
 {
-  rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<LaserTransformerPublisher>());
-  rclcpp::shutdown();
-  return 0;
+    rclcpp::init(argc, argv);
+    rclcpp::spin(std::make_shared<LaserTransformerPublisher>());
+    rclcpp::shutdown();
+    return 0;
 }

@@ -9,7 +9,10 @@
 //  导入消息类型文件
 #include "agv_interfaces/msg/agv_velo.hpp"
 #include "agv_interfaces/msg/agv_odometry.hpp"
+#include "agv_interfaces/msg/ret.hpp"
 #include "nav_msgs/msg/odometry.hpp"
+#include "sensor_msgs/msg/imu.hpp"
+#include "tf2/LinearMath/Quaternion.h"
 namespace canopen_ {
 using namespace std::chrono_literals;
 #define DATA_BUF_MAX_LEN 128
@@ -66,7 +69,8 @@ typedef struct
     union_uint16 reg;
     uint8_t flag;
     uint8_t func;
-    union_uint16 get_ret[4];
+    uint16_t get_ret[4];
+    // union_uint16 get_ret[4];
 }param_get16;
 param_get16 param_get16_ret;
 
@@ -76,15 +80,16 @@ typedef struct
     union_uint16 reg;
     uint8_t flag;
     uint8_t func;
-    union_int32 get_ret[4];
+    uint32_t get_ret[4];
+    // union_int32 get_ret[4];
 }param_get32;
 param_get32 param_get32_ret;
 
 //  里程计数据
 typedef struct
 {
-    union_int32 count_ret[4];
-    union_int16 velo_ret[4];
+    int32_t count_ret[4];
+    int16_t velo_ret[4];
 }odometry_;
 odometry_ odometry_data_;
 
@@ -127,8 +132,7 @@ imu_info_t imu_info;
 #define SPEED					0x08
 #define SET_PARAM				0x09
 #define GET_PARAM				0x0A
-#define ODOMETRY				0x0B
-#define IMU                     0x0C
+#define ODOMETRY_IMU			0x0B
 
 #define SAVE_RW		            0x2009
 #define LOCK_METHOD 			0x200F
@@ -211,7 +215,10 @@ private:
     std::shared_ptr<std::thread> read_data_thread_;
     rclcpp::Subscription<agv_interfaces::msg::AgvVelo>::SharedPtr velo_sub;
     rclcpp::Publisher<agv_interfaces::msg::AgvOdometry>::SharedPtr odometry_pub;
+    rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_pub;
+    rclcpp::Publisher<agv_interfaces::msg::Ret>::SharedPtr ret_pub;
     rclcpp::TimerBase::SharedPtr timer_;
+    agv_interfaces::msg::Ret ret_data;
 
     uint8_t data_rxflag = 0;
     uint8_t data_index = 0;
@@ -224,20 +231,18 @@ private:
     int64_t select = 0x0A;
     int16_t v1 = 0,v2 = 0,v3 = 0,v4 = 0;
     void _initSerial(void);
-    //  下面四个为serial串口库对象的数据处理函数
-    void readRawData(void);
-    void data_rcv(uint8_t rxdata);
-    void clear_usart1cmd(void);
-    void data_callback(const uint8_t* data, uint8_t len);
-
     void velo_callback(const agv_interfaces::msg::AgvVelo::SharedPtr velo_msg);
     void timer_callback(void);
+    //  下面三个为serial串口库对象的数据处理函数
+    void readRawData(void);
+    void data_rcv(const uint8_t rxdata);
+    void clear_usart1cmd(void);
+
     void data_analysis(const std::uint8_t* data, const std::uint8_t len);
     void control_analysis(const std::uint8_t* control_retdata, const std::uint8_t len);
     void speed_analysis(const std::uint8_t* speed_retdata, const std::uint8_t len);
-    void param_analysis(const std::uint8_t* param_retdata, const std::uint8_t len);
-    void odometry_analysis(const std::uint8_t* odometry_retdata);
-    void imu_analysis(const std::uint8_t* imu_retdata);
+    void param_analysis(const std::uint8_t* param_retdata);
+    void odometry_imu_analysis(const std::uint8_t* odometry_imu_retdata);
 
 public:
     canopen_node(std::string name):Node(name){
