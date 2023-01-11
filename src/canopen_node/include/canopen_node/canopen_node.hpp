@@ -12,7 +12,11 @@
 #include "agv_interfaces/msg/ret.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 #include "sensor_msgs/msg/imu.hpp"
+
 #include "tf2/LinearMath/Quaternion.h"
+#include <tf2_ros/transform_broadcaster.h>
+#include <geometry_msgs/msg/transform_stamped.hpp>
+
 namespace canopen_ {
 using namespace std::chrono_literals;
 #define DATA_BUF_MAX_LEN 128
@@ -80,7 +84,7 @@ typedef struct
     union_uint16 reg;
     uint8_t flag;
     uint8_t func;
-    uint32_t get_ret[4];
+    int32_t get_ret[4];
     // union_int32 get_ret[4];
 }param_get32;
 param_get32 param_get32_ret;
@@ -213,12 +217,17 @@ private:
     //  serial库串口对象
     std::shared_ptr<serial::Serial> serial_object;//  串口对象
     std::shared_ptr<std::thread> read_data_thread_;
-    rclcpp::Subscription<agv_interfaces::msg::AgvVelo>::SharedPtr velo_sub;
+    rclcpp::Subscription<std_msgs::msg::UInt16>::SharedPtr cmd_sub{};
     rclcpp::Publisher<agv_interfaces::msg::AgvOdometry>::SharedPtr odometry_pub;
     rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_pub;
     rclcpp::Publisher<agv_interfaces::msg::Ret>::SharedPtr ret_pub;
+    rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odo_pub;
+    std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
     rclcpp::TimerBase::SharedPtr timer_;
     agv_interfaces::msg::Ret ret_data;
+    rclcpp::Time current_time_;
+
+    float odom_x_=0.0, odom_y_=0.0, odom_th_=0.0;
 
     uint8_t data_rxflag = 0;
     uint8_t data_index = 0;
@@ -229,10 +238,11 @@ private:
     uint8_t func = 0;
 
     int64_t select = 0x0A;
-    int16_t v1 = 0,v2 = 0,v3 = 0,v4 = 0;
+    int16_t v1 = 10,v2 = 10,v3 = 10,v4 = 10;
     void _initSerial(void);
-    void velo_callback(const agv_interfaces::msg::AgvVelo::SharedPtr velo_msg);
+    void cmd_callback(const std_msgs::msg::UInt16::SharedPtr cmd_msg);
     void timer_callback(void);
+    
     //  下面三个为serial串口库对象的数据处理函数
     void readRawData(void);
     void data_rcv(const uint8_t rxdata);
@@ -243,7 +253,7 @@ private:
     void speed_analysis(const std::uint8_t* speed_retdata, const std::uint8_t len);
     void param_analysis(const std::uint8_t* param_retdata);
     void odometry_imu_analysis(const std::uint8_t* odometry_imu_retdata);
-
+    void odom_pub(float vx, float vth);
 public:
     canopen_node(std::string name):Node(name){
         _initSerial();
@@ -254,9 +264,9 @@ public:
     }
 
     //  发送数组
-    void senddata(const unsigned char* buf, uint8_t len);
+    size_t senddata(const unsigned char* buf, size_t len);
     //  发送字符串
-    void senddata(const std::string& data);
+    size_t senddata(const std::string& data);
 
     
     void control_cmd(uint8_t func);

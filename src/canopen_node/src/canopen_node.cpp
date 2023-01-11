@@ -3,17 +3,23 @@ using namespace std::chrono_literals;
 
 
 namespace canopen_{
-
+using std::placeholders::_2;
 void canopen_node::_initSerial(void)
 {
     serial_object = std::make_shared<serial::Serial>();
-    velo_sub = this->create_subscription<agv_interfaces::msg::AgvVelo>("velo_msgs", 10, 
-    std::bind(&canopen_node::velo_callback, this, std::placeholders::_1));
+    cmd_sub = this->create_subscription<std_msgs::msg::UInt16>("cmd_msgs", 10, 
+    std::bind(&canopen_node::cmd_callback, this, std::placeholders::_1));
     odometry_pub = this->create_publisher<agv_interfaces::msg::AgvOdometry>("odometry_data", 10);
+    odo_pub = this->create_publisher<nav_msgs::msg::Odometry>("ego_state", 10);
+    tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
     imu_pub = this->create_publisher<sensor_msgs::msg::Imu>("imu_msg", 10);
     ret_pub = this->create_publisher<agv_interfaces::msg::Ret>("ret_msg", 10);
-    timer_ = this->create_wall_timer(2000ms, std::bind(&canopen_node::timer_callback, this));
+    timer_ = this->create_wall_timer(100ms, std::bind(&canopen_node::timer_callback, this));
     this->declare_parameter<std::int64_t>("select", select);
+    this->declare_parameter<std::int64_t>("v1", this->v1);
+    this->declare_parameter<std::int64_t>("v2", this->v2);
+    this->declare_parameter<std::int64_t>("v3", this->v3);
+    this->declare_parameter<std::int64_t>("v4", this->v4);
     ret_data.m1_16.data = 0;
     ret_data.m2_16.data = 0;
     ret_data.m3_16.data = 0;
@@ -50,54 +56,60 @@ void canopen_node::_initSerial(void)
         RCLCPP_INFO(this->get_logger(), "serial port open failed"); //串口开启失败提示
     }
 }
-void canopen_node::velo_callback(const agv_interfaces::msg::AgvVelo::SharedPtr velo_msg)
+
+
+void canopen_node::cmd_callback(const std_msgs::msg::UInt16::SharedPtr cmd_msg)
 {
-    // //  回调函数处理
-    if( (v1 != velo_msg->v1.data) || 
-        (v2 != velo_msg->v2.data) || 
-        (v3 != velo_msg->v3.data) || 
-        (v4 != velo_msg->v4.data)
-        )
+    if(cmd_msg->data == 0)
     {
-        v1 = velo_msg->v1.data;
-        v2 = velo_msg->v2.data;
-        v3 = velo_msg->v3.data;
-        v4 = velo_msg->v4.data;
-        speed_cmd(velo_msg->v1.data, velo_msg->v2.data, velo_msg->v3.data, velo_msg->v4.data);
+        set_accelerate_time(100, 100, 100, 100);
     }
-}
-void canopen_node::timer_callback(void)
-{
-    this->get_parameter("select", this->select);
-    if(select == 0)
-    {
-        get_Vsmooth_factor();
-    }
-    else if(select == 1)
-    {
-        get_lock();
-    }
-    else if(select == 2)
+    else if(cmd_msg->data  == 1)
     {
         get_accelerate_time();
     }
-    else if(select == 3)
-    {
-        get_motor_temp();
-    }
-    else if(select ==4)
-    {
-        setenable();
-    }
-    else if(select ==5)
+    else if(cmd_msg->data  == 2)
     {
         isenable();
     }
-    else if(select ==6)
+    else if(cmd_msg->data  == 3)
     {
-        isfault();
+        quickstop();
     }
+    else if(cmd_msg->data  ==4)
+    {
+        quickstop_toenable();
+    }
+    else if(cmd_msg->data  ==5)
+    {
 
+    }
+    else if(cmd_msg->data  ==6)
+    {
+
+    }
+    // std::cout << "I'm in timercallback " << cmd_msg->data  << std::endl;
+}
+
+void canopen_node::timer_callback(void)
+{
+    int16_t t1,t2,t3,t4;
+    this->get_parameter("v1", t1);
+    this->get_parameter("v2", t2);
+    this->get_parameter("v3", t3);
+    this->get_parameter("v4", t4);
+    if( (v1 != t1) || 
+        (v2 != t2) || 
+        (v3 != t3) || 
+        (v4 != t4)
+        )
+    {
+        v1 = t1;
+        v2 = t2;
+        v3 = t3;
+        v4 = t4;
+        speed_cmd(v1, v2, v3, v4);
+    }
 }
 
 void canopen_node::clear_usart1cmd(void)
@@ -291,6 +303,10 @@ void canopen_node::param_analysis(const std::uint8_t* param_retdata)
                 ret_data.m2_16.data = param_get16_ret.get_ret[1];
                 ret_data.m3_16.data = param_get16_ret.get_ret[2];
                 ret_data.m4_16.data = param_get16_ret.get_ret[3];
+                ret_data.m1_32.data = 0;
+                ret_data.m2_32.data = 0;
+                ret_data.m3_32.data = 0;
+                ret_data.m4_32.data = 0;
                 ret_pub->publish(ret_data);
             }
             else
@@ -301,8 +317,12 @@ void canopen_node::param_analysis(const std::uint8_t* param_retdata)
                 param_get32_ret.reg.data8[1] = param_retdata[1];
                 for(int i = 0; i < 4; i++)
                 {
-                    param_get32_ret.get_ret[i] = *(uint32_t*)(param_retdata+i*4+3);
+                    param_get32_ret.get_ret[i] = *(int32_t*)(param_retdata+i*4+3);
                 }
+                ret_data.m1_16.data = 0;
+                ret_data.m2_16.data = 0;
+                ret_data.m3_16.data = 0;
+                ret_data.m4_16.data = 0;
                 ret_data.m1_32.data = param_get32_ret.get_ret[0];
                 ret_data.m2_32.data = param_get32_ret.get_ret[1];
                 ret_data.m3_32.data = param_get32_ret.get_ret[2];
@@ -316,6 +336,9 @@ void canopen_node::param_analysis(const std::uint8_t* param_retdata)
 }
 void canopen_node::odometry_imu_analysis(const std::uint8_t* odometry_imu_retdata)
 {
+    float vl = 0.0, vr = 0.0;
+    float vx = 0.0, vth = 0.0;
+    float delta_th = 0.0, delta_x = 0.0, delta_y = 0.0;
     for(int i = 0; i < 4; i++)
     {
         odometry_data_.count_ret[i] = *(int32_t*)(odometry_imu_retdata+i*4);
@@ -336,6 +359,31 @@ void canopen_node::odometry_imu_analysis(const std::uint8_t* odometry_imu_retdat
     odo_data.vbl.data = odometry_data_.velo_ret[1];
     odo_data.vfr.data = odometry_data_.velo_ret[2];
     odo_data.vfl.data = odometry_data_.velo_ret[3];
+
+    // 计算两个周期之间的时间差
+    static rclcpp::Time last_time_ = this->now();
+    current_time_ = this->now();
+    float dt = (current_time_.seconds() - last_time_.seconds());
+    last_time_ = current_time_;
+
+    vl = ((float)odo_data.vfl.data/600.0f) * 0.2f * M_PI;
+    vr = ((float)odo_data.vfr.data/600.0f) * 0.2f * M_PI;
+    vx = (vl+vr)/2.0f;
+    vth = (vr-vl)/0.5262f;
+    // RCLCPP_INFO(this->get_logger(), "dt=%f left_speed=%f right_speed=%f vx=%f vth=%f", dt, vl, vr, vx, vth);
+    // 计算里程计单周期内的姿态
+    delta_x = vx * cos(odom_th_) * dt;
+    delta_y = vx * sin(odom_th_) * dt;
+    delta_th = vth * dt;
+    // 计算里程计的累积姿态
+    odom_x_  += delta_x;
+    odom_y_  += delta_y;
+    odom_th_ += delta_th;
+    // 校正姿态角度，让机器人处于-180~180度之间
+    if(odom_th_ > M_PI) 
+        odom_th_ -= M_PI*2;
+    else if(odom_th_ < (-M_PI)) 
+        odom_th_ += M_PI*2;
 
     //std_msgs/Header header
     imu_msg.header.frame_id = "imu_link";
@@ -378,52 +426,129 @@ void canopen_node::odometry_imu_analysis(const std::uint8_t* odometry_imu_retdat
                                         0.0000, 0.0025, 0.0000,
                                         0.0000, 0.0000, 0.0025};
 
-    // printf("IMU数据： ");
-    // printf("%f ", imu_info.accel_x);
-    // printf("%f ", imu_info.accel_y);
-    // printf("%f ", imu_info.accel_z);
-    // printf("%f ", imu_info.angle_x);
-    // printf("%f ", imu_info.angle_y);
-    // printf("%f ", imu_info.angle_z);
-    // printf("%f ", imu_info.pitch);
-    // printf("%f ", imu_info.roll);
-    // printf("%f ", imu_info.yaw);
-    // printf("%f ", imu_info.quaternion_data0);
-    // printf("%f ", imu_info.quaternion_data1);
-    // printf("%f ", imu_info.quaternion_data2);
-    // printf("%f \n", imu_info.quaternion_data3);
-
+    odom_pub(vx,vth);
     odometry_pub->publish(odo_data);
     imu_pub->publish(imu_msg);
 }
 
+void canopen_node::odom_pub(float vx, float vth)
+{
+    auto odom_msg = nav_msgs::msg::Odometry();
+    //里程数据计算
+    odom_msg.header.frame_id = "odom";
+    odom_msg.header.stamp = this->get_clock()->now();
+    odom_msg.pose.pose.position.x = odom_x_;
+    odom_msg.pose.pose.position.y = odom_y_;
+    odom_msg.pose.pose.position.z = 0;
+
+    tf2::Quaternion q;
+    q.setRPY(0, 0, odom_th_);
+    odom_msg.child_frame_id = "odom_link";
+    odom_msg.pose.pose.orientation.x = q[0];
+    odom_msg.pose.pose.orientation.y = q[1];
+    odom_msg.pose.pose.orientation.z = q[2];
+    odom_msg.pose.pose.orientation.w = q[3];
+
+    const double odom_pose_covariance[36] = {1e-3, 0, 0, 0, 0, 0,
+
+                                             0, 1e-3, 0, 0, 0, 0,
+
+                                             0, 0, 1e6, 0, 0, 0,
+                                             0, 0, 0, 1e6, 0, 0,
+
+                                             0, 0, 0, 0, 1e6, 0,
+
+                                             0, 0, 0, 0, 0, 1e3};
+    const double odom_pose_covariance2[36]= {1e-9,    0,    0,   0,   0,    0,
+										      0, 1e-3, 1e-9,   0,   0,    0,
+										      0,    0,  1e6,   0,   0,    0,
+										      0,    0,    0, 1e6,   0,    0,
+										      0,    0,    0,   0, 1e6,    0,
+										      0,    0,    0,   0,   0, 1e-9 };
+
+    odom_msg.twist.twist.linear.x = vx;
+    odom_msg.twist.twist.linear.y = 0.00;
+    odom_msg.twist.twist.linear.z = 0.00;
+
+    odom_msg.twist.twist.angular.x = 0.00;
+    odom_msg.twist.twist.angular.y = 0.00;
+    odom_msg.twist.twist.angular.z = vth;
+
+    const double odom_twist_covariance[36] = { 1e-3, 0, 0, 0, 0, 0,
+                                                  0, 1e-3, 0, 0, 0, 0,
+
+                                                  0, 0, 1e6, 0, 0, 0,
+
+                                                  0, 0, 0, 1e6, 0, 0,
+
+                                                  0, 0, 0, 0, 1e6, 0,
+
+                                                  0, 0, 0, 0, 0, 1e3};
+    const double odom_twist_covariance2[36] = {1e-9,    0,    0,   0,   0,    0, 
+                                                  0, 1e-3, 1e-9,   0,   0,    0,
+                                                  0,    0,  1e6,   0,   0,    0,
+                                                  0,    0,    0, 1e6,   0,    0,
+                                                  0,    0,    0,   0, 1e6,    0,
+                                                  0,    0,    0,   0,   0, 1e-9};
+
+
+    if (vx == 0 && vth == 0)
+        memcpy(&odom_msg.pose.covariance, odom_pose_covariance2, sizeof(odom_pose_covariance2)),
+            memcpy(&odom_msg.twist.covariance, odom_twist_covariance2, sizeof(odom_twist_covariance2));
+    else
+        memcpy(&odom_msg.pose.covariance, odom_pose_covariance, sizeof(odom_pose_covariance)),
+            memcpy(&odom_msg.twist.covariance, odom_twist_covariance, sizeof(odom_twist_covariance));
+
+    // 发布里程计话题
+    odo_pub->publish(odom_msg);
+
+    geometry_msgs::msg::TransformStamped trans;
+
+    trans.header.stamp = this->get_clock()->now();
+    trans.header.frame_id = "odom";
+    trans.child_frame_id  = "odom_link";
+
+    trans.transform.translation.x = odom_x_;
+    trans.transform.translation.y = odom_y_;
+    trans.transform.translation.z = 0.0;
+
+    trans.transform.rotation.x = q[0];
+    trans.transform.rotation.y = q[1];
+    trans.transform.rotation.z = q[2];
+    trans.transform.rotation.w = q[3];
+    // 广播里程计TF
+    tf_broadcaster_->sendTransform(trans);
+}
 
 /*********************************包装serial库发送函数***************************************************/
-void canopen_node::senddata(const unsigned char* buf, uint8_t len)
+size_t canopen_node::senddata(const unsigned char* buf, size_t len)
 {
+    if(len<=0)
+    return 0;
+    size_t ret = 0;
     try
     {
-        serial_object->write(buf, len);
+        ret = serial_object->write(buf, len);
     }
     catch(const std::exception& e)
     {
         std::cerr << e.what() << '\n';
     }
-    
-    
+    return ret;
 }
 //  发送字符串
-void canopen_node::senddata(const std::string& data)
+size_t canopen_node::senddata(const std::string& data)
 {
-    
+    size_t ret = 0;
     try
     {
-        serial_object->write(data);
+            ret = serial_object->write(data);
     }
     catch(const std::exception& e)
     {
         std::cerr << e.what() << '\n';
     }
+    return ret;
 }
 /*********************************包装serial库发送函数***************************************************/
 
@@ -431,10 +556,11 @@ void canopen_node::control_cmd(uint8_t func)
 {
     uint8_t buf[4] = {0x01, 0x01, 0x01, 0x01};
     std::cout << "control_cmd test！" << std::endl;
-    int cnt = frame_pack::frame_packing(buf, tx_buf, 4, func);
-    this->senddata(tx_buf, cnt);
-    std::cout << std::endl;
-    // RCLCPP_INFO(this->get_logger(),"send：%d", cnt);
+    size_t cnt = frame_pack::frame_packing(buf, tx_buf, 4, func);
+    if(!this->senddata(tx_buf, cnt))
+    {
+        std::cout << "send error!" << std::endl;
+    }
 }
 void canopen_node::speed_cmd(const int16_t motor1_velo, const int16_t motor2_velo, 
     const int16_t motor3_velo, const int16_t motor4_velo)
@@ -451,9 +577,11 @@ void canopen_node::speed_cmd(const int16_t motor1_velo, const int16_t motor2_vel
         buf[i*2] = velo_[i].data8[0];
         buf[i*2+1] = velo_[i].data8[1];
     }
-    int cnt = frame_pack::frame_packing(buf, tx_buf, 8, 0x08);
-    this->senddata(tx_buf, cnt);
-    std::cout << std::endl;
+    size_t cnt = frame_pack::frame_packing(buf, tx_buf, 8, 0x08);
+    if(!this->senddata(tx_buf, cnt))
+    {
+        std::cout << "send error!" << std::endl;
+    }
 }
 void canopen_node::param_set_cmd(const uint16_t reg, const uint16_t motor1_data, 
     const uint16_t motor2_data, const uint16_t motor3_data, uint16_t motor4_data)
@@ -474,13 +602,11 @@ void canopen_node::param_set_cmd(const uint16_t reg, const uint16_t motor1_data,
         buf[i*2+2] = data[i].data8[0];
         buf[i*2+3] = data[i].data8[1];
     }
-    int cnt = frame_pack::frame_packing(buf, tx_buf, 10, 0x09);
-    this->senddata(tx_buf, cnt);
-    for(int i = 0; i < cnt; i++)
+    size_t cnt = frame_pack::frame_packing(buf, tx_buf, 10, 0x09);
+    if(!this->senddata(tx_buf, cnt))
     {
-        printf("%x ", tx_buf[i]);
+        std::cout << "send error!" << std::endl;
     }
-    std::cout << std::endl;
 }
 void canopen_node::param_get_cmd(const uint16_t reg)
 {
@@ -490,13 +616,11 @@ void canopen_node::param_get_cmd(const uint16_t reg)
     reg_.data_uint16 = reg;
     buf[0] = reg_.data8[0];
     buf[1] = reg_.data8[1];
-    int cnt = frame_pack::frame_packing(buf, tx_buf, 2, 0x0A);
-    this->senddata(tx_buf, cnt);
-    for(int i = 0; i < cnt; i++)
+    size_t cnt = frame_pack::frame_packing(buf, tx_buf, 2, 0x0A);
+    if(!this->senddata(tx_buf, cnt))
     {
-        printf("%x ", tx_buf[i]);
+        std::cout << "send error!" << std::endl;
     }
-    std::cout << std::endl;
 }
 
 
@@ -546,14 +670,14 @@ void canopen_node::cleargetbuf(void)
 int8_t canopen_node::setenable(void)
 {
     uint16_t i = 0;
-    rclcpp::Rate rate(2);
+    rclcpp::Rate rate(100);
     clearcontrolbuf();
     control_cmd(0x01);
     while(!control_ret.flag || (control_ret.func != 0x01))
     {
         i++;
         rate.sleep();
-        if(i == 0xFFFF)
+        if(i == 0xFF)
             return -1;
     }
     for(i = 0; i < 4; i++)
@@ -567,14 +691,14 @@ int8_t canopen_node::setenable(void)
 int8_t canopen_node::setdisable(void)
 {
     uint16_t i = 0;
-    rclcpp::Rate rate(2);
+    rclcpp::Rate rate(100);
     clearcontrolbuf();
     control_cmd(0x02);
     while(!control_ret.flag || (control_ret.func != 0x02))
     {
         i++;
         rate.sleep();
-        if(i == 0xFFFF)
+        if(i == 0xFF)
             return -1;
     }
     for(i = 0; i < 4; i++)
@@ -588,14 +712,14 @@ int8_t canopen_node::setdisable(void)
 int8_t canopen_node::isenable(void)
 {
     uint16_t i = 0;
-    rclcpp::Rate rate(2);
+    rclcpp::Rate rate(100);
     clearcontrolbuf();
     control_cmd(0x03);
     while(!control_ret.flag || (control_ret.func != 0x03))
     {
         i++;
         rate.sleep();
-        if(i == 0xFFFF)
+        if(i == 0xFF)
             return -1;
     }
     for(i = 0; i < 4; i++)
@@ -609,14 +733,14 @@ int8_t canopen_node::isenable(void)
 int8_t canopen_node::clearfault(void)
 {
     uint16_t i = 0;
-    rclcpp::Rate rate(2);
+    rclcpp::Rate rate(100);
     clearcontrolbuf();
     control_cmd(0x04);
     while(!control_ret.flag || (control_ret.func != 0x04))
     {
         i++;
         rate.sleep();
-        if(i == 0xFFFF)
+        if(i == 0xFF)
             return -1;
     }
     for(i = 0; i < 4; i++)
@@ -630,14 +754,14 @@ int8_t canopen_node::clearfault(void)
 int8_t canopen_node::isfault(void)
 {
     uint16_t i = 0;
-    rclcpp::Rate rate(2);
+    rclcpp::Rate rate(100);
     clearcontrolbuf();
     control_cmd(0x05);
     while(!control_ret.flag || (control_ret.func != 0x05))
     {
         i++;
         rate.sleep();
-        if(i == 0xFFFF)
+        if(i == 0xFF)
             return -1;
     }
     for(i = 0; i < 4; i++)
@@ -651,14 +775,14 @@ int8_t canopen_node::isfault(void)
 int8_t canopen_node::quickstop(void)
 {
     uint16_t i = 0;
-    rclcpp::Rate rate(2);
+    rclcpp::Rate rate(100);
     clearcontrolbuf();
     control_cmd(0x06);
     while(!control_ret.flag || (control_ret.func != 0x06))
     {
         i++;
         rate.sleep();
-        if(i == 0xFFFF)
+        if(i == 0xFF)
             return -1;
     }
     for(i = 0; i < 4; i++)
@@ -672,14 +796,14 @@ int8_t canopen_node::quickstop(void)
 int8_t canopen_node::quickstop_toenable(void)
 {
     uint16_t i = 0;
-    rclcpp::Rate rate(2);
+    rclcpp::Rate rate(100);
     clearcontrolbuf();
     control_cmd(0x07);
     while(!control_ret.flag || (control_ret.func != 0x07))
     {
         i++;
         rate.sleep();
-        if(i == 0xFFFF)
+        if(i == 0xFF)
             return -1;
     }
     for(i = 0; i < 4; i++)
@@ -694,14 +818,14 @@ int8_t canopen_node::setspeed(const int16_t motor1_velo, const int16_t motor2_ve
             const int16_t motor3_velo, const int16_t motor4_velo)
 {
     uint16_t i;
-    rclcpp::Rate rate(2);
+    rclcpp::Rate rate(100);
     clearvelobuf();
     speed_cmd(motor1_velo, motor2_velo, motor3_velo, motor4_velo);
     while((!velocity_ret.flag) || (velocity_ret.func != 0x08))
     {
         i++;
         rate.sleep();
-        if(i == 0xFFFF)
+        if(i == 0xFF)
             return -1; 
     }
     return 1;
@@ -710,7 +834,7 @@ int8_t canopen_node::setspeed(const int16_t motor1_velo, const int16_t motor2_ve
 int8_t canopen_node::set_issave_rw(uint16_t issave)
 {
     uint16_t i = 0;
-    rclcpp::Rate rate(2);
+    rclcpp::Rate rate(100);
     clearsetbuf();
     param_set_cmd(SAVE_RW, issave, issave, issave, issave);
 
@@ -718,7 +842,7 @@ int8_t canopen_node::set_issave_rw(uint16_t issave)
     {
         i++;
         rate.sleep();
-        if(i == 0xFFFF)
+        if(i == 0xFF)
             return -1;
     }
     for(i = 0; i < 4; i++)
@@ -733,7 +857,7 @@ int8_t canopen_node::set_issave_rw(uint16_t issave)
 int8_t canopen_node::set_lock(uint16_t lock)
 {
     uint16_t i = 0;
-    rclcpp::Rate rate(2);
+    rclcpp::Rate rate(100);
     clearsetbuf();
     param_set_cmd(LOCK_METHOD, lock, lock, lock, lock);
 
@@ -741,7 +865,7 @@ int8_t canopen_node::set_lock(uint16_t lock)
     {
         i++;
         rate.sleep();
-        if(i == 0xFFFF)
+        if(i == 0xFF)
             return -1;
     }
     for(i = 0; i < 4; i++)
@@ -756,7 +880,7 @@ int8_t canopen_node::set_lock(uint16_t lock)
 int8_t canopen_node::set_issave_rws(uint16_t issave)
 {
     uint16_t i = 0;
-    rclcpp::Rate rate(2);
+    rclcpp::Rate rate(100);
     clearsetbuf();
     param_set_cmd(SAVE_RW_S, issave, issave, issave, issave);
 
@@ -764,7 +888,7 @@ int8_t canopen_node::set_issave_rws(uint16_t issave)
     {
         i++;
         rate.sleep();
-        if(i == 0xFFFF)
+        if(i == 0xFF)
             return -1;
     }
     for(i = 0; i < 4; i++)
@@ -779,7 +903,7 @@ int8_t canopen_node::set_issave_rws(uint16_t issave)
 int8_t canopen_node::set_Vsmooth_factor(uint16_t factor1, uint16_t factor2, uint16_t factor3, uint16_t factor4)
 {
     uint16_t i = 0;
-    rclcpp::Rate rate(2);
+    rclcpp::Rate rate(100);
     clearsetbuf();
     param_set_cmd(VELO_SMOOTH_FACTOR, factor1, factor2, factor3, factor4);
 
@@ -787,7 +911,7 @@ int8_t canopen_node::set_Vsmooth_factor(uint16_t factor1, uint16_t factor2, uint
     {
         i++;
         rate.sleep();
-        if(i == 0xFFFF)
+        if(i == 0xFF)
             return -1;
     }
     for(i = 0; i < 4; i++)
@@ -803,7 +927,7 @@ int8_t canopen_node::set_Vsmooth_factor(uint16_t factor1, uint16_t factor2, uint
 int8_t canopen_node::set_Eratio_gain(uint16_t factor1, uint16_t factor2, uint16_t factor3, uint16_t factor4)
 {
     uint16_t i = 0;
-    rclcpp::Rate rate(2);
+    rclcpp::Rate rate(100);
     clearsetbuf();
     param_set_cmd(ELEC_ERATIO_GAIN, factor1, factor2, factor3, factor4);
 
@@ -811,7 +935,7 @@ int8_t canopen_node::set_Eratio_gain(uint16_t factor1, uint16_t factor2, uint16_
     {
         i++;
         rate.sleep();
-        if(i == 0xFFFF)
+        if(i == 0xFF)
             return -1;
     }
     for(i = 0; i < 4; i++)
@@ -826,7 +950,7 @@ int8_t canopen_node::set_Eratio_gain(uint16_t factor1, uint16_t factor2, uint16_
 int8_t canopen_node::set_Eintegral_gain(uint16_t factor1, uint16_t factor2, uint16_t factor3, uint16_t factor4)
 {
     uint16_t i = 0;
-    rclcpp::Rate rate(2);
+    rclcpp::Rate rate(100);
     clearsetbuf();
     param_set_cmd(ELEC_INTEGRAL, factor1, factor2, factor3, factor4);
 
@@ -834,7 +958,7 @@ int8_t canopen_node::set_Eintegral_gain(uint16_t factor1, uint16_t factor2, uint
     {
         i++;
         rate.sleep();
-        if(i == 0xFFFF)
+        if(i == 0xFF)
             return -1;
     }
     for(i = 0; i < 4; i++)
@@ -849,7 +973,7 @@ int8_t canopen_node::set_Eintegral_gain(uint16_t factor1, uint16_t factor2, uint
 int8_t canopen_node::set_feedforward_ratio(uint16_t factor1, uint16_t factor2, uint16_t factor3, uint16_t factor4)
 {
     uint16_t i = 0;
-    rclcpp::Rate rate(2);
+    rclcpp::Rate rate(100);
     clearsetbuf();
     param_set_cmd(FEEDFORWARD_RATIO, factor1, factor2, factor3, factor4);
 
@@ -857,7 +981,7 @@ int8_t canopen_node::set_feedforward_ratio(uint16_t factor1, uint16_t factor2, u
     {
         i++;
         rate.sleep();
-        if(i == 0xFFFF)
+        if(i == 0xFF)
             return -1;
     }
     for(i = 0; i < 4; i++)
@@ -872,7 +996,7 @@ int8_t canopen_node::set_feedforward_ratio(uint16_t factor1, uint16_t factor2, u
 int8_t canopen_node::set_torque_ratio(uint16_t factor1, uint16_t factor2, uint16_t factor3, uint16_t factor4)
 {
     uint16_t i = 0;
-    rclcpp::Rate rate(2);
+    rclcpp::Rate rate(100);
     clearsetbuf();
     param_set_cmd(TORQUE_RATIO, factor1, factor2, factor3, factor4);
 
@@ -880,7 +1004,7 @@ int8_t canopen_node::set_torque_ratio(uint16_t factor1, uint16_t factor2, uint16
     {
         i++;
         rate.sleep();
-        if(i == 0xFFFF)
+        if(i == 0xFF)
             return -1;
     }
     
@@ -896,7 +1020,7 @@ int8_t canopen_node::set_torque_ratio(uint16_t factor1, uint16_t factor2, uint16
 int8_t canopen_node::set_VKp(uint16_t factor1, uint16_t factor2, uint16_t factor3, uint16_t factor4)
 {
     uint16_t i = 0;
-    rclcpp::Rate rate(2);
+    rclcpp::Rate rate(100);
     clearsetbuf();
     param_set_cmd(VELO_KP, factor1, factor2, factor3, factor4);
 
@@ -904,7 +1028,7 @@ int8_t canopen_node::set_VKp(uint16_t factor1, uint16_t factor2, uint16_t factor
     {
         i++;
         rate.sleep();
-        if(i == 0xFFFF)
+        if(i == 0xFF)
             return -1;
     }
     
@@ -920,7 +1044,7 @@ int8_t canopen_node::set_VKp(uint16_t factor1, uint16_t factor2, uint16_t factor
 int8_t canopen_node::set_VKi(uint16_t factor1, uint16_t factor2, uint16_t factor3, uint16_t factor4)
 {
     uint16_t i = 0;
-    rclcpp::Rate rate(2);
+    rclcpp::Rate rate(100);
     clearsetbuf();
     param_set_cmd(VELO_KI, factor1, factor2, factor3, factor4);
 
@@ -928,7 +1052,7 @@ int8_t canopen_node::set_VKi(uint16_t factor1, uint16_t factor2, uint16_t factor
     {
         i++;
         rate.sleep();
-        if(i == 0xFFFF)
+        if(i == 0xFF)
             return -1;
     }
     
@@ -944,7 +1068,7 @@ int8_t canopen_node::set_VKi(uint16_t factor1, uint16_t factor2, uint16_t factor
 int8_t canopen_node::set_Vfeedforward_Kf(uint16_t factor1, uint16_t factor2, uint16_t factor3, uint16_t factor4)
 {
     uint16_t i = 0;
-    rclcpp::Rate rate(2);
+    rclcpp::Rate rate(100);
     clearsetbuf();
     param_set_cmd(VELO_FEEDFORWARD_KF, factor1, factor2, factor3, factor4);
 
@@ -952,7 +1076,7 @@ int8_t canopen_node::set_Vfeedforward_Kf(uint16_t factor1, uint16_t factor2, uin
     {
         i++;
         rate.sleep();
-        if(i == 0xFFFF)
+        if(i == 0xFF)
             return -1;
     }
     
@@ -968,7 +1092,7 @@ int8_t canopen_node::set_Vfeedforward_Kf(uint16_t factor1, uint16_t factor2, uin
 int8_t canopen_node::set_PKp(uint16_t factor1, uint16_t factor2, uint16_t factor3, uint16_t factor4)
 {
     uint16_t i = 0;
-    rclcpp::Rate rate(2);
+    rclcpp::Rate rate(100);
     clearsetbuf();
     param_set_cmd(POSI_KP, factor1, factor2, factor3, factor4);
 
@@ -976,7 +1100,7 @@ int8_t canopen_node::set_PKp(uint16_t factor1, uint16_t factor2, uint16_t factor
     {
         i++;
         rate.sleep();
-        if(i == 0xFFFF)
+        if(i == 0xFF)
             return -1;
     }
     
@@ -992,7 +1116,7 @@ int8_t canopen_node::set_PKp(uint16_t factor1, uint16_t factor2, uint16_t factor
 int8_t canopen_node::set_Pfeedforward_Kf(uint16_t factor1, uint16_t factor2, uint16_t factor3, uint16_t factor4)
 {
     uint16_t i = 0;
-    rclcpp::Rate rate(2);
+    rclcpp::Rate rate(100);
     clearsetbuf();
     param_set_cmd(POSI_FEEDFORWARD_KF, factor1, factor2, factor3, factor4);
 
@@ -1000,7 +1124,7 @@ int8_t canopen_node::set_Pfeedforward_Kf(uint16_t factor1, uint16_t factor2, uin
     {
         i++;
         rate.sleep();
-        if(i == 0xFFFF)
+        if(i == 0xFF)
             return -1;
     }
     
@@ -1016,7 +1140,7 @@ int8_t canopen_node::set_Pfeedforward_Kf(uint16_t factor1, uint16_t factor2, uin
 int8_t canopen_node::set_accelerate_time(uint32_t time1, uint32_t time2, uint32_t time3, uint32_t time4)
 {
     uint16_t i = 0;
-    rclcpp::Rate rate(2);
+    rclcpp::Rate rate(100);
     clearsetbuf();
     param_set_cmd(ACC_TIME, time1, time2, time3, time4);
 
@@ -1024,7 +1148,7 @@ int8_t canopen_node::set_accelerate_time(uint32_t time1, uint32_t time2, uint32_
     {
         i++;
         rate.sleep();
-        if(i == 0xFFFF)
+        if(i == 0xFF)
             return -1;
     }
     for(i = 0; i < 4; i++)
@@ -1039,7 +1163,7 @@ int8_t canopen_node::set_accelerate_time(uint32_t time1, uint32_t time2, uint32_
 int8_t canopen_node::set_decelerate_time(uint32_t time1, uint32_t time2, uint32_t time3, uint32_t time4)
 {
     uint16_t i = 0;
-    rclcpp::Rate rate(2);
+    rclcpp::Rate rate(100);
     clearsetbuf();
     param_set_cmd(DE_TIME, time1, time2, time3, time4);
 
@@ -1047,7 +1171,7 @@ int8_t canopen_node::set_decelerate_time(uint32_t time1, uint32_t time2, uint32_
     {
         i++;
         rate.sleep();
-        if(i == 0xFFFF)
+        if(i == 0xFF)
             return -1;
     }
     for(i = 0; i < 4; i++)
@@ -1063,14 +1187,14 @@ int8_t canopen_node::set_decelerate_time(uint32_t time1, uint32_t time2, uint32_
 int8_t canopen_node::get_count(void)
 {
     uint16_t i = 0;
-    rclcpp::Rate rate(2);
+    rclcpp::Rate rate(100);
     cleargetbuf();
     param_get_cmd(ACTUAL_COUNT);
     while(!param_get32_ret.flag || (param_get32_ret.func != 0x0A) || (param_get32_ret.reg.data_uint16 != ACTUAL_COUNT))
     {
         i++;
         rate.sleep();
-        if(i == 0xFFFF)
+        if(i == 0xFF)
             return 0;
     }
 
@@ -1080,14 +1204,14 @@ int8_t canopen_node::get_count(void)
 int8_t canopen_node::get_motor_temp(void)
 {
     uint16_t i = 0;
-    rclcpp::Rate rate(2);
+    rclcpp::Rate rate(100);
     cleargetbuf();
     param_get_cmd(MOTOR_TEMP);
     while(!param_get16_ret.flag || (param_get16_ret.func != 0x0A) || (param_get16_ret.reg.data_uint16 != MOTOR_TEMP))
     {
         i++;
         rate.sleep();
-        if(i == 0xFFFF)
+        if(i == 0xFF)
             return 0;
     }
 
@@ -1097,14 +1221,14 @@ int8_t canopen_node::get_motor_temp(void)
 int8_t canopen_node::get_motor_status(void)
 {
     uint16_t i = 0;
-    rclcpp::Rate rate(2);
+    rclcpp::Rate rate(100);
     cleargetbuf();
     param_get_cmd(IS_MOTOR_MOVE);
     while(!param_get16_ret.flag || (param_get16_ret.func != 0x0A) || (param_get16_ret.reg.data_uint16 != IS_MOTOR_MOVE))
     {
         i++;
         rate.sleep();
-        if(i == 0xFFFF)
+        if(i == 0xFF)
             return 0;
     }
 
@@ -1114,14 +1238,14 @@ int8_t canopen_node::get_motor_status(void)
 int8_t canopen_node::get_hall_status(void)
 {
     uint16_t i = 0;
-    rclcpp::Rate rate(2);
+    rclcpp::Rate rate(100);
     cleargetbuf();
     param_get_cmd(MOTOR_HALL_STATUS);
     while(!param_get16_ret.flag || (param_get16_ret.func != 0x0A) || (param_get16_ret.reg.data_uint16 != MOTOR_HALL_STATUS))
     {
         i++;
         rate.sleep();
-        if(i == 0xFFFF)
+        if(i == 0xFF)
             return 0;
     }
 
@@ -1131,14 +1255,14 @@ int8_t canopen_node::get_hall_status(void)
 int8_t canopen_node::get_errorcode(void)
 {
     uint16_t i = 0;
-    rclcpp::Rate rate(2);
+    rclcpp::Rate rate(100);
     cleargetbuf();
     param_get_cmd(ERROR_CODE);
     while(!param_get16_ret.flag || (param_get16_ret.func != 0x0A) || (param_get16_ret.reg.data_uint16 != ERROR_CODE))
     {
         i++;
         rate.sleep();
-        if(i == 0xFFFF)
+        if(i == 0xFF)
             return 0;
     }
 
@@ -1148,14 +1272,14 @@ int8_t canopen_node::get_errorcode(void)
 int8_t canopen_node::get_actual_velocity(void)
 {
     uint16_t i = 0;
-    rclcpp::Rate rate(2);
+    rclcpp::Rate rate(100);
     cleargetbuf();
     param_get_cmd(ACTUAL_VELOCITY);
     while(!param_get32_ret.flag || (param_get32_ret.func != 0x0A) || (param_get32_ret.reg.data_uint16 != ACTUAL_VELOCITY))
     {
         i++;
         rate.sleep();
-        if(i == 0xFFFF)
+        if(i == 0xFF)
             return 0;
     }
 
@@ -1165,14 +1289,14 @@ int8_t canopen_node::get_actual_velocity(void)
 int8_t canopen_node::get_lock(void)
 {
     uint16_t i = 0;
-    rclcpp::Rate rate(2);
+    rclcpp::Rate rate(100);
     cleargetbuf();
     param_get_cmd(LOCK_METHOD);
     while(!param_get16_ret.flag || (param_get16_ret.func != 0x0A) || (param_get16_ret.reg.data_uint16 != LOCK_METHOD))
     {
         i++;
         rate.sleep();
-        if(i == 0xFFFF)
+        if(i == 0xFF)
             return 0;
     }
 
@@ -1182,14 +1306,14 @@ int8_t canopen_node::get_lock(void)
 int8_t canopen_node::get_issave_rws(void)
 {
     uint16_t i = 0;
-    rclcpp::Rate rate(2);
+    rclcpp::Rate rate(100);
     cleargetbuf();
     param_get_cmd(SAVE_RW_S);
     while(!param_get16_ret.flag || (param_get16_ret.func != 0x0A) || (param_get16_ret.reg.data_uint16 != SAVE_RW_S))
     {
         i++;
         rate.sleep();
-        if(i == 0xFFFF)
+        if(i == 0xFF)
             return 0;
     }
 
@@ -1199,14 +1323,14 @@ int8_t canopen_node::get_issave_rws(void)
 int8_t canopen_node::get_Vsmooth_factor(void)
 {
     uint16_t i = 0;
-    rclcpp::Rate rate(2);
+    rclcpp::Rate rate(100);
     cleargetbuf();
     param_get_cmd(VELO_SMOOTH_FACTOR);
     while(!param_get16_ret.flag || (param_get16_ret.func != 0x0A) || (param_get16_ret.reg.data_uint16 != VELO_SMOOTH_FACTOR))
     {
         i++;
         rate.sleep();
-        if(i == 0xFFFF)
+        if(i == 0xFF)
             return 0;
     }
 
@@ -1216,14 +1340,14 @@ int8_t canopen_node::get_Vsmooth_factor(void)
 int8_t canopen_node::get_Eratio_gain(void)
 {
     uint16_t i = 0;
-    rclcpp::Rate rate(2);
+    rclcpp::Rate rate(100);
     cleargetbuf();
     param_get_cmd(ELEC_ERATIO_GAIN);
     while(!param_get16_ret.flag || (param_get16_ret.func != 0x0A) || (param_get16_ret.reg.data_uint16 != ELEC_ERATIO_GAIN))
     {
         i++;
         rate.sleep();
-        if(i == 0xFFFF)
+        if(i == 0xFF)
             return 0;
     }
 
@@ -1233,14 +1357,14 @@ int8_t canopen_node::get_Eratio_gain(void)
 int8_t canopen_node::get_Eintegral_gain(void)
 {
     uint16_t i = 0;
-    rclcpp::Rate rate(2);
+    rclcpp::Rate rate(100);
     cleargetbuf();
     param_get_cmd(ELEC_INTEGRAL);
     while(!param_get16_ret.flag || (param_get16_ret.func != 0x0A) || (param_get16_ret.reg.data_uint16 != ELEC_INTEGRAL))
     {
         i++;
         rate.sleep();
-        if(i == 0xFFFF)
+        if(i == 0xFF)
             return 0;
     }
 
@@ -1250,14 +1374,14 @@ int8_t canopen_node::get_Eintegral_gain(void)
 int8_t canopen_node::get_feedforward_ratio(void)
 {
     uint16_t i = 0;
-    rclcpp::Rate rate(2);
+    rclcpp::Rate rate(100);
     cleargetbuf();
     param_get_cmd(FEEDFORWARD_RATIO);
     while(!param_get16_ret.flag || (param_get16_ret.func != 0x0A) || (param_get16_ret.reg.data_uint16 != FEEDFORWARD_RATIO))
     {
         i++;
         rate.sleep();
-        if(i == 0xFFFF)
+        if(i == 0xFF)
             return 0;
     }
 
@@ -1267,14 +1391,14 @@ int8_t canopen_node::get_feedforward_ratio(void)
 int8_t canopen_node::get_torque_ratio(void)
 {
     uint16_t i = 0;
-    rclcpp::Rate rate(2);
+    rclcpp::Rate rate(100);
     cleargetbuf();
     param_get_cmd(TORQUE_RATIO);
     while(!param_get16_ret.flag || (param_get16_ret.func != 0x0A) || (param_get16_ret.reg.data_uint16 != TORQUE_RATIO))
     {
         i++;
         rate.sleep();
-        if(i == 0xFFFF)
+        if(i == 0xFF)
             return 0;
     }
 
@@ -1284,14 +1408,14 @@ int8_t canopen_node::get_torque_ratio(void)
 int8_t canopen_node::get_VKp(void)
 {
     uint16_t i = 0;
-    rclcpp::Rate rate(2);
+    rclcpp::Rate rate(100);
     cleargetbuf();
     param_get_cmd(VELO_KP);
     while(!param_get16_ret.flag || (param_get16_ret.func != 0x0A) || (param_get16_ret.reg.data_uint16 != VELO_KP))
     {
         i++;
         rate.sleep();
-        if(i == 0xFFFF)
+        if(i == 0xFF)
             return 0;
     }
 
@@ -1301,14 +1425,14 @@ int8_t canopen_node::get_VKp(void)
 int8_t canopen_node::get_VKi(void)
 {
     uint16_t i = 0;
-    rclcpp::Rate rate(2);
+    rclcpp::Rate rate(100);
     cleargetbuf();
     param_get_cmd(VELO_KI);
     while(!param_get16_ret.flag || (param_get16_ret.func != 0x0A) || (param_get16_ret.reg.data_uint16 != VELO_KI))
     {
         i++;
         rate.sleep();
-        if(i == 0xFFFF)
+        if(i == 0xFF)
             return 0;
     }
 
@@ -1318,14 +1442,14 @@ int8_t canopen_node::get_VKi(void)
 int8_t canopen_node::get_Vfeedforward_Kf(void)
 {
     uint16_t i = 0;
-    rclcpp::Rate rate(2);
+    rclcpp::Rate rate(100);
     cleargetbuf();
     param_get_cmd(VELO_FEEDFORWARD_KF);
     while(!param_get16_ret.flag || (param_get16_ret.func != 0x0A) || (param_get16_ret.reg.data_uint16 != VELO_FEEDFORWARD_KF))
     {
         i++;
         rate.sleep();
-        if(i == 0xFFFF)
+        if(i == 0xFF)
             return 0;
     }
 
@@ -1335,14 +1459,14 @@ int8_t canopen_node::get_Vfeedforward_Kf(void)
 int8_t canopen_node::get_PKp(void)
 {
     uint16_t i = 0;
-    rclcpp::Rate rate(2);
+    rclcpp::Rate rate(100);
     cleargetbuf();
     param_get_cmd(POSI_KP);
     while(!param_get16_ret.flag || (param_get16_ret.func != 0x0A) || (param_get16_ret.reg.data_uint16 != POSI_KP))
     {
         i++;
         rate.sleep();
-        if(i == 0xFFFF)
+        if(i == 0xFF)
             return 0;
     }
 
@@ -1352,14 +1476,14 @@ int8_t canopen_node::get_PKp(void)
 int8_t canopen_node::get_Pfeedforward_Kf(void)
 {
     uint16_t i = 0;
-    rclcpp::Rate rate(2);
+    rclcpp::Rate rate(100);
     cleargetbuf();
     param_get_cmd(POSI_FEEDFORWARD_KF);
     while(!param_get16_ret.flag || (param_get16_ret.func != 0x0A) || (param_get16_ret.reg.data_uint16 != POSI_FEEDFORWARD_KF))
     {
         i++;
         rate.sleep();
-        if(i == 0xFFFF)
+        if(i == 0xFF)
             return 0;
     }
 
@@ -1369,14 +1493,14 @@ int8_t canopen_node::get_Pfeedforward_Kf(void)
 int8_t canopen_node::get_accelerate_time(void)
 {
     uint16_t i = 0;
-    rclcpp::Rate rate(2);
+    rclcpp::Rate rate(100);
     cleargetbuf();
     param_get_cmd(ACC_TIME);
-    while(!param_get16_ret.flag || (param_get16_ret.func != 0x0A) || (param_get16_ret.reg.data_uint16 != ACC_TIME))
+    while(!param_get32_ret.flag || (param_get32_ret.func != 0x0A) || (param_get32_ret.reg.data_uint16 != ACC_TIME))
     {
         i++;
         rate.sleep();
-        if(i == 0xFFFF)
+        if(i == 0xFF)
             return 0;
     }
 
@@ -1386,14 +1510,14 @@ int8_t canopen_node::get_accelerate_time(void)
 int8_t canopen_node::get_decelerate_time(void)
 {
     uint16_t i = 0;
-    rclcpp::Rate rate(2);
+    rclcpp::Rate rate(100);
     cleargetbuf();
     param_get_cmd(DE_TIME);
     while(!param_get16_ret.flag || (param_get16_ret.func != 0x0A) || (param_get16_ret.reg.data_uint16 != DE_TIME))
     {
         i++;
         rate.sleep();
-        if(i == 0xFFFF)
+        if(i == 0xFF)
             return 0;
     }
     return 1;

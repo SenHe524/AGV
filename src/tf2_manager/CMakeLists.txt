@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
-project(canopen_node)
+project(tf2_manager)
 
 # Default to C99
 if(NOT CMAKE_C_STANDARD)
@@ -18,34 +18,24 @@ endif()
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
-find_package(nav_msgs REQUIRED)
-find_package(sensor_msgs REQUIRED)
-find_package(geometry_msgs REQUIRED)
-find_package(tf2_ros REQUIRED)
 find_package(tf2 REQUIRED)
-find_package(serial REQUIRED)
-find_package(agv_interfaces REQUIRED)
-include_directories(include/canopen_node)
-add_executable(canopen_node src/canopen_node.cpp src/frame_pack.cpp)
+find_package(tf2_ros REQUIRED)
+find_package(geometry_msgs REQUIRED)
 
+add_executable(tf2_manager_node src/tf2_manager_node.cpp)
+target_include_directories(tf2_manager_node PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
 ament_target_dependencies(
-  canopen_node
-  rclcpp
-  nav_msgs
-  sensor_msgs
-  geometry_msgs
-  tf2_ros
-  tf2
-  serial
-  agv_interfaces
+  tf2_manager_node
+  "rclcpp"
+  "tf2"
+  "tf2_ros"
+  "geometry_msgs"
 )
 
-install(DIRECTORY launch
-        DESTINATION share/${PROJECT_NAME}
-)
-install(TARGETS 
-    canopen_node
-    DESTINATION lib/${PROJECT_NAME})
+install(TARGETS tf2_manager_node
+  DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

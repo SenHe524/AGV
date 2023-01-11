@@ -4,6 +4,7 @@
 #include "rclcpp/rclcpp.hpp"
 //  1.导入消息类型文件
 #include "agv_interfaces/msg/agv_velo.hpp"
+#include "std_msgs/msg/u_int16.hpp"
 using namespace std::chrono_literals;
 
 //  声明占位参数
@@ -22,36 +23,25 @@ public:
         RCLCPP_INFO(this->get_logger(), "大家好，我是%s！", name.c_str());
 
         //  3.创建发布者
-        velo_pub = this->create_publisher<agv_interfaces::msg::AgvVelo>("velo_msgs", 10);
+        cmd_pub = this->create_publisher<std_msgs::msg::UInt16>("cmd_msgs", 10);
         timer_ = this->create_wall_timer(1000ms, std::bind(&velo_pub_test::timer_callback, this));
-        this->v1 = 0;
-        this->v2 = 0;
-        this->v3 = 0;
-        this->v4 = 0;
-        this->declare_parameter<std::int64_t>("v1", this->v1);
-        this->declare_parameter<std::int64_t>("v2", this->v2);
-        this->declare_parameter<std::int64_t>("v3", this->v3);
-        this->declare_parameter<std::int64_t>("v4", this->v4);
+        this->select = 10;
+        this->declare_parameter<std::int64_t>("select", this->select);
     }
 
 private:
     //  3.声明发布者订阅者
     rclcpp::Publisher<agv_interfaces::msg::AgvVelo>::SharedPtr velo_pub;
+    rclcpp::Publisher<std_msgs::msg::UInt16>::SharedPtr cmd_pub;
     rclcpp::TimerBase::SharedPtr timer_;
-    int64_t v1, v2, v3, v4;
+    int64_t select;
     void timer_callback()
     {
-        //  回调函数处理
-        agv_interfaces::msg::AgvVelo velo_pub_;
-        this->get_parameter("v1", this->v1);
-        this->get_parameter("v2", this->v2);
-        this->get_parameter("v3", this->v3);
-        this->get_parameter("v4", this->v4);
-        velo_pub_.v1.data = this->v1;
-        velo_pub_.v2.data = this->v2;
-        velo_pub_.v3.data = this->v3;
-        velo_pub_.v4.data = this->v4;
-        velo_pub->publish(velo_pub_);
+        std_msgs::msg::UInt16 se;
+        int64_t se_te;
+        this->get_parameter("select", se_te);
+        se.data = (uint16_t)se_te;
+        cmd_pub->publish(se);
     }
 };
 
